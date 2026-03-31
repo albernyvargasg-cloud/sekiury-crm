@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Sekiury CRM</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a1628">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sekiury CRM">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="application-name" content="Sekiury CRM">
+<meta name="msapplication-TileColor" content="#0a1628">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Serif+Display&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -8211,68 +8222,167 @@ function handleLegalFile(file) {
   reader.onload = e => {
     try {
       const wb = XLSX.read(e.target.result, {type:'binary', cellDates:true});
-      // Buscar hoja Clientes Legales
-      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('cliente')) || wb.SheetNames[0];
-      const ws = wb.Sheets[sheetName];
-      const raw = XLSX.utils.sheet_to_json(ws, {defval:''});
-      if (!raw.length) { showToast('El archivo está vacío','err'); return; }
 
-      const COL_MAP_LEGAL = {
-        'NOMBRE / RAZÓN SOCIAL':'nombre','NOMBRE':'nombre','RAZÓN SOCIAL':'nombre',
-        'TIPO PERSONA':'tipo_persona',
-        'TIPO DOCUMENTO':'tipo_doc',
-        'NÚMERO DOCUMENTO':'documento','NUMERO DOCUMENTO':'documento','NÚMERO DE DOCUMENTO':'documento',
-        'CELULAR':'celular','CELULAR PRINCIPAL':'celular',
-        'EMAIL':'email','EMAIL PRINCIPAL':'email',
-        'CIUDAD':'ciudad',
-        'DIRECCIÓN':'direccion','DIRECCION':'direccion',
-        'ESTADO':'estado',
-        'OBSERVACIONES':'obs',
+      // ── Hoja Clientes Legales ──────────────────────────────────────────
+      const sheetCli = wb.SheetNames.find(n => n.toLowerCase().includes('cliente')) || wb.SheetNames[0];
+      const wsCli = wb.Sheets[sheetCli];
+      const rawCli = XLSX.utils.sheet_to_json(wsCli, {defval:''});
+
+      const COL_CLI = {
+        'NOMBRE / RAZÓN SOCIAL *':    'nombre',   'NOMBRE / RAZÓN SOCIAL': 'nombre',
+        'NOMBRE':                      'nombre',   'RAZÓN SOCIAL':          'nombre',
+        'DOCUMENTO *\n(CC/NIT)':       'documento','DOCUMENTO *':           'documento',
+        'DOCUMENTO':                   'documento',
+        'TIPO PERSONA\n(NATURAL/JURIDICA)':'tipo_persona','TIPO PERSONA':   'tipo_persona',
+        'TIPO DOC\n(CC/NIT/CE/PP)':    'tipo_doc', 'TIPO DOC':              'tipo_doc',
+        'CELULAR':                     'celular',  'EMAIL':                 'email',
+        'CIUDAD':                      'ciudad',   'DIRECCIÓN':             'direccion',
+        'DIRECCION':                   'direccion','ESTADO\n(ACTIVO/INACTIVO)':'estado',
+        'ESTADO':                      'estado',
       };
 
-      _legalImportData = raw.map(row => {
+      _legalImportData = rawCli.map(row => {
         const c = {_id: 'lcli_' + genId()};
         Object.keys(row).forEach(k => {
-          const key = COL_MAP_LEGAL[k.trim().toUpperCase()] || COL_MAP_LEGAL[k.trim()];
+          const key = COL_CLI[k.trim().toUpperCase()] || COL_CLI[k.trim()];
           if (key) c[key] = String(row[k]||'').trim();
         });
         if (!c.estado) c.estado = 'activo';
         return c;
       }).filter(c => c.nombre && c.documento);
 
-      const prev = _legalImportData.slice(0,5);
+      // ── Hoja Casos Legales ─────────────────────────────────────────────
+      const sheetCas = wb.SheetNames.find(n => n.toLowerCase().includes('caso'));
+      let _casosImport = [];
+      if (sheetCas) {
+        const wsCas = wb.Sheets[sheetCas];
+        const rawCas = XLSX.utils.sheet_to_json(wsCas, {defval:''});
+        const COL_CAS = {
+          'CLIENTE LEGAL *\n(NOMBRE EXACTO)': 'cliente_nombre', 'CLIENTE LEGAL *': 'cliente_nombre',
+          'CLIENTE_NOMBRE': 'cliente_nombre',
+          'NOMBRE DEL CASO':   'nombre_caso',
+          'TIPO DE CASO *':    'tipo',          'TIPO':              'tipo',
+          'ESTADO':            'estado',
+          'RADICADO':          'radicado',
+          'TIPO DESPACHO\n(JUZGADO/NOTARIA)': 'tipo_despacho', 'TIPO_DESPACHO': 'tipo_despacho',
+          'JUZGADO / NOTARÍA': 'juzgado',       'JUZGADO':           'juzgado',
+          'FECHA\nAPERTURA':   'fecha_apertura', 'FECHA_APERTURA':    'fecha_apertura',
+          'PRÓXIMA\nAUDIENCIA':'prox_audiencia', 'PROX_AUDIENCIA':    'prox_audiencia',
+          'HONORARIOS\nPACTADOS':'honorarios',   'HONORARIOS':        'honorarios',
+          'ANTICIPO\nRECIBIDO':'anticipo',        'ANTICIPO':          'anticipo',
+          'CAUSANTE\n(NOMBRE)':'causante',        'CAUSANTE':          'causante',
+          'CAUSANTE\n(CÉDULA)':'causante_cc',     'CAUSANTE_CC':       'causante_cc',
+          'FECHA\nFALLECIMIENTO':'fecha_fallecimiento',
+          'HEREDEROS\n(NOMBRE CC:DOC:PARENTESCO | ...)':'herederos_raw','HEREDEROS':'herederos_raw',
+          'DESCRIPCIÓN':       'descripcion',    'DESCRIPCION':       'descripcion',
+        };
+        _casosImport = rawCas.map(row => {
+          const c = {_id: 'caso_' + genId()};
+          Object.keys(row).forEach(k => {
+            const key = COL_CAS[k.trim().toUpperCase()] || COL_CAS[k.trim()];
+            if (key) c[key] = String(row[k]||'').trim();
+          });
+          // Parsear herederos: "Nombre CC:doc:Parentesco|..."
+          if (c.herederos_raw) {
+            c.herederos = c.herederos_raw.split('|').map(h => {
+              const parts = h.trim().split('CC:');
+              const nombre = parts[0].trim();
+              const rest = (parts[1]||'').split(':');
+              return { nombre, cc: rest[0]||'', parentesco: rest[1]||'Hijo/a' };
+            }).filter(h => h.nombre);
+            delete c.herederos_raw;
+          } else { c.herederos = []; }
+          c.num_herederos = c.herederos.length;
+          c.terceros = [];
+          if (!c.estado) c.estado = 'activo';
+          if (!c.tipo_despacho) c.tipo_despacho = 'juzgado';
+          c.honorarios = parseFloat(c.honorarios)||0;
+          c.anticipo   = parseFloat(c.anticipo)||0;
+          c.fecha_creacion = new Date().toISOString().split('T')[0];
+          if (c.tipo?.includes('Sucesión') && c.causante && !c.nombre_caso) {
+            c.nombre_caso = 'Sucesión de ' + c.causante;
+          }
+          return c;
+        }).filter(c => c.cliente_nombre && c.tipo);
+        window._casosImportTemp = _casosImport;
+      }
+
+      // Preview
+      const prev = _legalImportData.slice(0,4);
+      const casosPrev = (window._casosImportTemp||[]).slice(0,3);
       document.getElementById('legal-import-preview').innerHTML = `
-        <div class="import-count" style="margin-top:14px;">✅ ${_legalImportData.length} clientes encontrados</div>
-        <div class="import-preview" style="overflow-x:auto;margin-top:10px;">
-          <table>
-            <thead><tr><th>Nombre</th><th>Documento</th><th>Celular</th><th>Ciudad</th><th>Estado</th></tr></thead>
-            <tbody>${prev.map(c=>`<tr>
-              <td>${c.nombre||'—'}</td>
-              <td>${c.documento||'—'}</td>
-              <td>${c.celular||'—'}</td>
-              <td>${c.ciudad||'—'}</td>
-              <td>${c.estado||'—'}</td>
+        <div style="font-size:12px;font-weight:800;color:var(--ok);margin:12px 0 6px;">✅ ${_legalImportData.length} clientes encontrados</div>
+        <div style="overflow-x:auto;margin-bottom:12px;">
+          <table style="width:100%;font-size:11px;border-collapse:collapse;">
+            <thead><tr style="background:var(--bg3);">
+              <th style="padding:6px 8px;text-align:left;color:var(--ciel);">Nombre</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--ciel);">Documento</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--ciel);">Ciudad</th>
+            </tr></thead>
+            <tbody>${prev.map(c=>`<tr style="border-bottom:1px solid var(--bdr2);">
+              <td style="padding:5px 8px;color:var(--t1);">${c.nombre||'—'}</td>
+              <td style="padding:5px 8px;color:var(--t2);">${c.documento||'—'}</td>
+              <td style="padding:5px 8px;color:var(--t3);">${c.ciudad||'—'}</td>
             </tr>`).join('')}</tbody>
           </table>
-        </div>`;
+        </div>
+        ${casosPrev.length ? `
+        <div style="font-size:12px;font-weight:800;color:var(--turq);margin-bottom:6px;">⚖️ ${(window._casosImportTemp||[]).length} casos encontrados</div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;font-size:11px;border-collapse:collapse;">
+            <thead><tr style="background:var(--bg3);">
+              <th style="padding:6px 8px;text-align:left;color:var(--ciel);">Caso</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--ciel);">Tipo</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--ciel);">Herederos</th>
+            </tr></thead>
+            <tbody>${casosPrev.map(c=>`<tr style="border-bottom:1px solid var(--bdr2);">
+              <td style="padding:5px 8px;color:var(--t1);">${c.nombre_caso||c.causante||'—'}</td>
+              <td style="padding:5px 8px;color:var(--t2);">${c.tipo||'—'}</td>
+              <td style="padding:5px 8px;color:var(--t3);">${c.herederos?.length||0} heredero(s)</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>` : ''}`;
       const btn = document.getElementById('btn-confirmar-import-legal');
-      if (btn) { btn.textContent = `✅ Importar ${_legalImportData.length} clientes`; btn.style.display='flex'; }
+      const total = _legalImportData.length + (window._casosImportTemp||[]).length;
+      if (btn) { btn.textContent = `✅ Importar (${_legalImportData.length} clientes + ${(window._casosImportTemp||[]).length} casos)`; btn.style.display='flex'; }
     } catch(err) { showToast('Error: ' + err.message, 'err'); }
   };
   reader.readAsBinaryString(file);
 }
 
 function confirmarImportLegal() {
+  // Importar clientes
   const existentes = getLegalClientes();
   const nuevos = _legalImportData.filter(imp =>
     !existentes.some(c => c.documento === imp.documento)
   );
-  const dup = _legalImportData.length - nuevos.length;
-  const lista = [...existentes, ...nuevos];
-  localStorage.setItem(LEGAL_CLIENTES_KEY, JSON.stringify(lista));
+  const dupCli = _legalImportData.length - nuevos.length;
+  const listaCli = [...existentes, ...nuevos];
+  localStorage.setItem(LEGAL_CLIENTES_KEY, JSON.stringify(listaCli));
+
+  // Importar casos — vincular cliente_id por nombre
+  let nuevosCasos = 0;
+  const casosImport = window._casosImportTemp || [];
+  if (casosImport.length) {
+    const existentesCasos = getLegalCasos();
+    const casosNuevos = casosImport.filter(cas => {
+      // Buscar cliente por nombre
+      const cli = listaCli.find(c => (c.nombre||'').toLowerCase() === (cas.cliente_nombre||'').toLowerCase());
+      if (!cli) return false;
+      cas.cliente_id = cli._id;
+      // Evitar duplicado por nombre_caso + cliente
+      return !existentesCasos.some(e => e.cliente_id===cli._id && e.nombre_caso===cas.nombre_caso);
+    });
+    localStorage.setItem(LEGAL_CASOS_KEY, JSON.stringify([...existentesCasos, ...casosNuevos]));
+    nuevosCasos = casosNuevos.length;
+    window._casosImportTemp = [];
+  }
+
   cerrarModal('modal-import-legal');
   filtrarClientesLegales();
-  showToast(`${nuevos.length} clientes importados${dup?' · '+dup+' duplicados omitidos':''} ✅`);
+  filtrarCasos();
+  renderLegalKpis();
+  showToast(`✅ ${nuevos.length} clientes${dupCli?' ('+dupCli+' dup)':''}${nuevosCasos?' + '+nuevosCasos+' casos':''} importados`);
 }
 
 
@@ -8340,13 +8450,17 @@ function mnNavTo(page) {
   window.scrollTo(0, 0);
 }
 
-// Add viewport meta if missing
-if (!document.querySelector('meta[name="viewport"]')) {
-  const m = document.createElement('meta');
-  m.name = 'viewport';
-  m.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0';
-  document.head.appendChild(m);
+// ── SERVICE WORKER (PWA) ──────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sekiury-crm/sw.js')
+      .then(() => console.log('✅ Sekiury PWA activa'))
+      .catch(() => {});
+  });
 }
+</script>
+</body>
+</html>
 
 
 // ══════════════════════════════════════════════════════════════════════════════
