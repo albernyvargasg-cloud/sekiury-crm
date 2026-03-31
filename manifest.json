@@ -1,0 +1,43 @@
+{
+  "name": "Sekiury CRM",
+  "short_name": "Sekiury",
+  "description": "CRM interno Sekiury Ltda — Gestión de seguros",
+  "start_url": "/sekiury-crm/",
+  "scope": "/sekiury-crm/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a1628",
+  "theme_color": "#0a1628",
+  "lang": "es-CO",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Clientes",
+      "short_name": "Clientes",
+      "description": "Ver lista de clientes",
+      "url": "/sekiury-crm/?page=clientes",
+      "icons": [{ "src": "icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Motor IA",
+      "short_name": "Motor IA",
+      "description": "Inteligencia comercial",
+      "url": "/sekiury-crm/?page=motor-ia",
+      "icons": [{ "src": "icon-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}
