@@ -666,7 +666,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <div class="stats-row">
         <div class="stat-card c1"><div class="sv" id="st-total">0</div><div class="sl">Total Clientes</div></div>
         <div class="stat-card c2"><div class="sv" id="st-activos">0</div><div class="sl">Activos</div></div>
-        <div class="stat-card c3"><div class="sv" id="st-inactivos">0</div><div class="sl">Inactivos</div></div>
+        <div class="stat-card c3"><div class="sv" id="st-prospectos">0</div><div class="sl">Prospectos</div></div>
         <div class="stat-card c4"><div class="sv" id="st-cumples">0</div><div class="sl">Cumpleaños próximos 5 días</div></div>
       </div>
 
@@ -3018,7 +3018,7 @@ function actualizarCardsDashboard(clientesActivos, polizasVigentes, cobrosPendie
         <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#2F4D8A,#68D7FF);"></div>
         <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--t3);margin-bottom:8px;">👥 Clientes</div>
         <div style="font-size:32px;font-weight:900;color:var(--ciel);margin-bottom:2px;">${clientesActivos}</div>
-        <div style="font-size:11px;color:var(--t3);">de ${clientes.length} registrados</div>
+        <div style="font-size:11px;color:var(--t3);">de ${clientes.length} · <span style="color:var(--warn);">${clientes.filter(c=>(c.estado||'').toLowerCase()==='prospecto').length} prospectos</span></div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:18px;position:relative;overflow:hidden;">
         <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--ok);"></div>
@@ -3091,7 +3091,7 @@ function actualizarCardsDashboard(clientesActivos, polizasVigentes, cobrosPendie
 function actualizarStats() {
   const total = clientes.length;
   const activos = clientes.filter(c=>(c.estado||'activo').toLowerCase()==='activo').length;
-  const inactivos = total - activos;
+  const prospectos = clientes.filter(c=>(c.estado||'').toLowerCase()==='prospecto').length;
   const hoy = new Date();
   const cumples = clientes.filter(c=>{
     if (!c.fecha_nacimiento) return false;
@@ -3103,7 +3103,7 @@ function actualizarStats() {
   }).length;
   document.getElementById('st-total').textContent = total;
   document.getElementById('st-activos').textContent = activos;
-  document.getElementById('st-inactivos').textContent = inactivos;
+  document.getElementById('st-prospectos').textContent = prospectos;
   document.getElementById('st-cumples').textContent = cumples;
   document.getElementById('clientes-count').textContent = '(' + filtrados.length + ')';
   // Actualizar filtro ciudad
@@ -5431,8 +5431,9 @@ function guardarPoliza() {
     data.fecha_creacion = new Date().toISOString().slice(0,10);
     polizas.push(data);
     showToast('Poliza creada');
+  }
 
-    // ── AUTO-REGISTRAR BENEFICIARIOS COMO PROSPECTOS ──────────────────────
+  // ── AUTO-REGISTRAR BENEFICIARIOS COMO PROSPECTOS (nueva Y editada) ────
     const ramoData = (data.ramo||'').toUpperCase();
     if (ramoData.includes('SALUD') || ramoData.includes('VIDA') || ramoData.includes('ACCIDENTE')) {
       const bensNuevos = (data.beneficiarios||[]).filter(b => b.nombre);
@@ -5500,12 +5501,12 @@ function guardarPoliza() {
         }
       }, 400);
     }
-  }
   guardarPolizasLS();
   filtradas_p = [...polizas];
   filtrarPolizas();
   actualizarStatsPolizas();
   actualizarDashboard();
+  actualizarStats();
   cerrarModal('modal-poliza');
   setTimeout(() => sincronizarTareasAutomaticas(), 300);
 }
