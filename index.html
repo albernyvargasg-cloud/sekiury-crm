@@ -401,6 +401,12 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
   #cfg-content-conocimiento [style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
   .conocimiento-asesores-grid { grid-template-columns: 1fr !important; }
 
+  /* ── Beneficiarios póliza mobile ─────────────────────────────────────── */
+  #pf-beneficiarios-list > div > div:first-child {
+    grid-template-columns: 1fr 1fr 28px !important;
+  }
+  #pf-beneficiarios-list [data-ben-nacimiento] { display: none !important; }
+
   /* ── Asistente IA mobile ─────────────────────────────────────────────── */
   #ia-panel-asistente [style*="display:grid"] { grid-template-columns: 1fr !important; }
   .ia-situacion-btns { flex-wrap: wrap !important; gap: 6px !important; }
@@ -1623,7 +1629,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
   <div id="cfg-content-usuarios" style="display:none;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <div style="font-size:13px;color:var(--t3);">Usuarios con acceso al CRM Sekiury</div>
-      <button class="btn btn-primary" onclick="abrirNuevoUsuario()">＋ Nuevo Usuario</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" onclick="limpiarClientesDuplicados()" title="Elimina clientes duplicados por cédula" style="font-size:12px;">🧹 Limpiar duplicados</button>
+        <button class="btn btn-primary" onclick="abrirNuevoUsuario()">＋ Nuevo Usuario</button>
+      </div>
     </div>
     <div id="cfg-tabla-usuarios" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;"></div>
   </div>
@@ -2917,6 +2926,35 @@ function ini(c) {
 }
 function colorIdx(id) { return COLORES[Math.abs(String(id).split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % COLORES.length]; }
 function guardarLS() { localStorage.setItem('sekiury_clientes', JSON.stringify(clientes)); }
+
+// Elimina clientes duplicados por número de documento (conserva el más completo)
+function limpiarClientesDuplicados() {
+  const vistos = {};
+  const limpios = [];
+  clientes.forEach(c => {
+    const doc = (c.numero_documento||'').trim();
+    if (!doc) { limpios.push(c); return; }
+    if (!vistos[doc]) {
+      vistos[doc] = true;
+      limpios.push(c);
+    } else {
+      // Si el duplicado es un prospecto generado automáticamente, lo descartamos
+      if (c._id && c._id.startsWith('cli_ben_')) return;
+      // Si el existente era el auto-generado, reemplazarlo
+      const idx = limpios.findIndex(x => x.numero_documento === doc && x._id && x._id.startsWith('cli_ben_'));
+      if (idx >= 0) limpios[idx] = c;
+    }
+  });
+  if (limpios.length < clientes.length) {
+    const eliminados = clientes.length - limpios.length;
+    clientes.length = 0;
+    limpios.forEach(c => clientes.push(c));
+    guardarLS();
+    showToast(`🧹 ${eliminados} duplicado(s) eliminado(s)`);
+  } else {
+    showToast('✅ Sin duplicados encontrados');
+  }
+}
 function genId() { return Date.now() + Math.random().toString(36).slice(2,7); }
 function showToast(msg, tipo='ok') {
   const t = document.getElementById('toast');
@@ -3137,9 +3175,35 @@ function filtrarClientes() {
 
 function topbarSearch(v) {
   const active = document.querySelector('.page.active').id;
+  const q = v.trim().toLowerCase();
+
   if (active === 'page-clientes') {
-    document.getElementById('search-clientes').value = v;
-    filtrarClientes();
+    const el = document.getElementById('search-clientes');
+    if (el) { el.value = v; filtrarClientes(); }
+  } else if (active === 'page-polizas') {
+    const el = document.getElementById('search-polizas');
+    if (el) { el.value = v; filtrarPolizas(); }
+  } else if (active === 'page-cobros') {
+    const el = document.getElementById('search-cobros');
+    if (el) { el.value = v; filtrarCobros && filtrarCobros(); }
+  } else if (active === 'page-tareas') {
+    const el = document.getElementById('search-tareas');
+    if (el) { el.value = v; filtrarTareas && filtrarTareas(); }
+  } else if (active === 'page-siniestros') {
+    const el = document.getElementById('search-siniestros');
+    if (el) { el.value = v; filtrarSiniestros && filtrarSiniestros(); }
+  } else if (active === 'page-legal') {
+    const el = document.getElementById('legal-search');
+    if (el) { el.value = v; filtrarCasos && filtrarCasos(); }
+  } else {
+    // Si no hay módulo activo con búsqueda, ir a clientes y buscar ahí
+    if (q.length >= 2) {
+      navTo('clientes');
+      setTimeout(() => {
+        const el = document.getElementById('search-clientes');
+        if (el) { el.value = v; filtrarClientes(); }
+      }, 100);
+    }
   }
 }
 
@@ -4891,7 +4955,17 @@ function renderDetallePolizaInfo(p) {
       ${dp('Cédula',p.cedula_cliente)}
       ${dp('Tomador',p.nom_tomador)}${dp('Doc. Tomador',p.doc_tomador)}
       ${dp('Asegurado',p.nom_asegurado)}${dp('Doc. Asegurado',p.doc_asegurado)}
-      ${(p.beneficiarios||[]).length>0?`<div style="font-size:11px;color:var(--t3);margin-top:8px;font-weight:700;">BENEFICIARIOS</div>${p.beneficiarios.map(b=>`<div style="font-size:12px;color:var(--t2);padding:4px 0;">${b.nombre} <span style="color:var(--t3);">${b.documento||''}</span></div>`).join('')}`:''}
+      ${(p.beneficiarios||[]).length>0?`<div style="font-size:11px;color:var(--t3);margin-top:8px;font-weight:700;">BENEFICIARIOS</div>${p.beneficiarios.map(b=>{
+        const cli = clientes.find(c=>c.numero_documento===b.documento);
+        const pols = cli ? polizas.filter(pol=>pol.cedula_cliente===b.documento).length : 0;
+        const edad = b.fecha_nacimiento ? Math.floor((new Date()-new Date(b.fecha_nacimiento))/(365.25*24*3600*1000)) : null;
+        return `<div style="font-size:12px;color:var(--t2);padding:5px 0;border-bottom:1px solid var(--bdr2);">
+          <span style="color:var(--t1);font-weight:600;">${b.nombre}</span>
+          ${b.documento?`<span style="color:var(--t3);margin-left:6px;">${b.documento}</span>`:''}
+          ${edad?`<span style="color:var(--t3);margin-left:6px;">🎂 ${edad} años</span>`:''}
+          ${cli?`<span style="color:var(--ok);margin-left:6px;">✅ Cliente${pols?' · '+pols+' póliza(s)':''}</span>`:''}
+        </div>`;
+      }).join('')}`:''}
     </div>
     ${p.obs_internas?`<div class="dp-section"><div class="dp-section-title">Obs. Internas</div><div style="font-size:12px;color:var(--t2);line-height:1.6;">${p.obs_internas}</div></div>`:''}
     ${p.observaciones?`<div class="dp-section"><div class="dp-section-title">Observaciones</div><div style="font-size:12px;color:var(--t2);line-height:1.6;">${p.observaciones}</div></div>`:''}
@@ -5169,14 +5243,37 @@ function limpiarClientePoliza() {
 
 function agregarBeneficiario() {
   const lista = document.getElementById('pf-beneficiarios-list');
-  const idx = lista.children.length;
+  const ramo = (document.getElementById('pf-ramo')?.value || '').toUpperCase();
+  const esSaludVida = ramo.includes('SALUD') || ramo.includes('VIDA') || ramo.includes('ACCIDENTE');
   const div = document.createElement('div');
-  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:6px;';
+  div.style.cssText = 'background:var(--bg3);border:1px solid var(--bdr);border-radius:10px;padding:10px 12px;margin-bottom:8px;';
   div.innerHTML = `
-    <input placeholder="Nombre beneficiario" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-nombre>
-    <input placeholder="Documento" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-doc>
-    <button onclick="this.parentElement.remove()" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;">x</button>`;
+    <div style="display:grid;grid-template-columns:2fr 1.5fr ${esSaludVida?'1.2fr ':''} 28px;gap:8px;align-items:center;">
+      <input placeholder="Nombre beneficiario" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;width:100%;" data-ben-nombre oninput="benBuscarCliente(this)">
+      <input placeholder="Cédula / Documento" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;width:100%;" data-ben-doc>
+      ${esSaludVida ? `<input type="date" title="Fecha de nacimiento" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;width:100%;" data-ben-nacimiento>` : ''}
+      <button onclick="this.closest('div[style*=border-radius]').remove()" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;width:28px;height:28px;">✕</button>
+    </div>
+    <div class="ben-cliente-info" style="margin-top:6px;font-size:11px;"></div>`;
   lista.appendChild(div);
+}
+
+function benBuscarCliente(input) {
+  const nombre = input.value.trim().toLowerCase();
+  const info = input.closest('div[style*=border-radius]')?.querySelector('.ben-cliente-info');
+  if (!info || nombre.length < 3) { if(info) info.innerHTML=''; return; }
+  const match = clientes.find(c => ((c.nombre||'')+(c.apellidos||'')).toLowerCase().includes(nombre));
+  if (match) {
+    const polizasCliente = polizas.filter(p => p.cedula_cliente === match.numero_documento).length;
+    info.innerHTML = `<span style="color:var(--ok);">✅ Cliente registrado</span> · ${match.numero_documento} · <span style="color:var(--ciel);">${polizasCliente} póliza(s) como tomador</span>`;
+    // Auto-llenar documento si está vacío
+    const docInput = input.closest('div[style*=border-radius]')?.querySelector('[data-ben-doc]');
+    if (docInput && !docInput.value) docInput.value = match.numero_documento;
+    const nacInput = input.closest('div[style*=border-radius]')?.querySelector('[data-ben-nacimiento]');
+    if (nacInput && !nacInput.value && match.fecha_nacimiento) nacInput.value = match.fecha_nacimiento;
+  } else {
+    info.innerHTML = `<span style="color:var(--warn);">⚠️ No registrado como cliente — se creará como prospecto al guardar</span>`;
+  }
 }
 
 function llenarFormPoliza(p) {
@@ -5236,13 +5333,25 @@ function llenarFormPoliza(p) {
   // Beneficiarios
   const lista = document.getElementById('pf-beneficiarios-list');
   lista.innerHTML = '';
+  const ramoP = (p.ramo||'').toUpperCase();
+  const esSaludVidaP = ramoP.includes('SALUD') || ramoP.includes('VIDA') || ramoP.includes('ACCIDENTE');
   (p.beneficiarios||[]).forEach(b => {
     const div = document.createElement('div');
-    div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:6px;';
+    div.style.cssText = 'background:var(--bg3);border:1px solid var(--bdr);border-radius:10px;padding:10px 12px;margin-bottom:8px;';
+    // Check if client exists
+    const clienteExiste = clientes.find(c => c.numero_documento === b.documento);
+    const polizasBen = clienteExiste ? polizas.filter(pol => pol.cedula_cliente === b.documento).length : 0;
+    const infoHtml = clienteExiste
+      ? `<span style="color:var(--ok);">✅ Cliente registrado</span> · ${b.documento} · <span style="color:var(--ciel);">${polizasBen} póliza(s) como tomador</span>`
+      : (b.documento ? `<span style="color:var(--warn);">⚠️ No registrado como cliente</span>` : '');
     div.innerHTML = `
-      <input placeholder="Nombre" value="${b.nombre||''}" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-nombre>
-      <input placeholder="Documento" value="${b.documento||''}" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-doc>
-      <button onclick="this.parentElement.remove()" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;">x</button>`;
+      <div style="display:grid;grid-template-columns:2fr 1.5fr ${esSaludVidaP?'1.2fr ':''} 28px;gap:8px;align-items:center;">
+        <input placeholder="Nombre beneficiario" value="${b.nombre||''}" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;width:100%;" data-ben-nombre oninput="benBuscarCliente(this)">
+        <input placeholder="Cédula / Documento" value="${b.documento||''}" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;width:100%;" data-ben-doc>
+        ${esSaludVidaP ? `<input type="date" value="${b.fecha_nacimiento||''}" title="Fecha de nacimiento" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;width:100%;" data-ben-nacimiento>` : ''}
+        <button onclick="this.closest('div[style*=border-radius]').remove()" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;width:28px;height:28px;">✕</button>
+      </div>
+      <div class="ben-cliente-info" style="margin-top:6px;font-size:11px;">${infoHtml}</div>`;
     lista.appendChild(div);
   });
   // Llenar datalists
@@ -5259,7 +5368,8 @@ function leerFormPoliza() {
   document.querySelectorAll('#pf-beneficiarios-list > div').forEach(div => {
     const nom = div.querySelector('[data-ben-nombre]')?.value?.trim();
     const doc = div.querySelector('[data-ben-doc]')?.value?.trim();
-    if(nom) bens.push({nombre:nom, documento:doc});
+    const nac = div.querySelector('[data-ben-nacimiento]')?.value?.trim();
+    if(nom) bens.push({nombre:nom, documento:doc, fecha_nacimiento: nac||''});
   });
   return {
     numero_poliza: document.getElementById('pf-numero').value.trim(),
@@ -5321,6 +5431,75 @@ function guardarPoliza() {
     data.fecha_creacion = new Date().toISOString().slice(0,10);
     polizas.push(data);
     showToast('Poliza creada');
+
+    // ── AUTO-REGISTRAR BENEFICIARIOS COMO PROSPECTOS ──────────────────────
+    const ramoData = (data.ramo||'').toUpperCase();
+    if (ramoData.includes('SALUD') || ramoData.includes('VIDA') || ramoData.includes('ACCIDENTE')) {
+      const bensNuevos = (data.beneficiarios||[]).filter(b => b.nombre);
+      let registrados = 0;
+      bensNuevos.forEach(b => {
+        const nombreNorm = (b.nombre||'').toLowerCase().trim();
+        // Buscar por documento O por nombre para evitar duplicados
+        const existe = clientes.find(c =>
+          (b.documento && c.numero_documento === b.documento) ||
+          ((c.nombre||'')+' '+(c.apellidos||'')).toLowerCase().trim().includes(nombreNorm.substring(0,10))
+        );
+        if (!existe && b.documento) {
+          const nombreParts = b.nombre.trim().split(' ');
+          const nuevoCliente = {
+            _id: 'cli_ben_' + genId(),
+            tipo_persona: 'natural',
+            tipo_documento: 'CC',
+            numero_documento: b.documento,
+            nombre: nombreParts.slice(0, Math.ceil(nombreParts.length/2)).join(' '),
+            apellidos: nombreParts.slice(Math.ceil(nombreParts.length/2)).join(' '),
+            fecha_nacimiento: b.fecha_nacimiento || '',
+            estado: 'prospecto',
+            observaciones: `Beneficiario póliza ${data.numero_poliza} · ${data.aseguradora} · ${data.ramo}`,
+          };
+          clientes.push(nuevoCliente);
+          registrados++;
+        }
+      });
+      if (registrados > 0) {
+        guardarLS();
+        setTimeout(() => showToast(`👥 ${registrados} beneficiario(s) nuevo(s) registrado(s) como prospecto`), 500);
+      }
+    }
+    // ── ALERTA COMISIÓN PENDIENTE ─────────────────────────────────────────
+    if (data.comision && parseFloat(data.comision) > 0) {
+      const comision = parseFloat(data.comision);
+      const cliente = `${data.nombres_cliente||''} ${data.apellidos_cliente||''}`.trim();
+      setTimeout(() => {
+        const confirmar = confirm(
+          `💰 COMISIÓN PENDIENTE\n\n` +
+          `Póliza: ${data.numero_poliza}\n` +
+          `Cliente: ${cliente}\n` +
+          `Aseguradora: ${data.aseguradora||''}\n` +
+          `Comisión: $${comision.toLocaleString('es-CO')}\n\n` +
+          `¿Deseas registrar este cobro de comisión como pendiente?`
+        );
+        if (confirmar) {
+          // Crear cobro de comisión automático
+          const cobros = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
+          cobros.push({
+            _id: 'cob_' + genId(),
+            poliza_id: data._id,
+            numero_poliza: data.numero_poliza,
+            cliente: cliente,
+            cedula_cliente: data.cedula_cliente || '',
+            concepto: `Comisión póliza ${data.numero_poliza} - ${data.aseguradora||''}`,
+            valor: comision,
+            fecha_vence: data.fecha_inicio || new Date().toISOString().slice(0,10),
+            estado: 'pendiente',
+            tipo: 'comision',
+            fecha_creacion: new Date().toISOString().slice(0,10),
+          });
+          localStorage.setItem('sekiury_cobros', JSON.stringify(cobros));
+          showToast('💰 Comisión registrada en Cobros ✅');
+        }
+      }, 400);
+    }
   }
   guardarPolizasLS();
   filtradas_p = [...polizas];
@@ -8422,6 +8601,7 @@ function toggleMobileBuscar() {
     if (isVisible) {
       sb.removeAttribute('style');
       sb.setAttribute('data-visible', '0');
+      sb.querySelector('input').value = '';
     } else {
       sb.style.setProperty('display', 'flex', 'important');
       sb.style.position = 'fixed';
@@ -8435,7 +8615,13 @@ function toggleMobileBuscar() {
       sb.style.padding = '10px 14px';
       sb.style.borderBottom = '1px solid var(--bdr)';
       sb.setAttribute('data-visible', '1');
-      sb.querySelector('input')?.focus();
+      const inp = sb.querySelector('input');
+      if (inp) {
+        inp.focus();
+        inp.select();
+        // Asegurar que el input de búsqueda del módulo activo también se llene
+        inp.oninput = () => topbarSearch(inp.value);
+      }
     }
   }
 }
