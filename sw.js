@@ -1,4 +1,4 @@
-const CACHE = 'sekiury-crm-v2';
+const CACHE = 'sekiury-crm-v3';
 
 // Instalar — activar inmediatamente sin cachear
 self.addEventListener('install', e => {
