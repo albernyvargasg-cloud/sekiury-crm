@@ -538,6 +538,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div class="nav-item" onclick="navTo('legal',this)">
       <span class="ic">⚖️</span><span class="lbl">Sekiury Legal</span>
     </div>
+    <div class="nav-item" onclick="navTo('assist',this)">
+      <span class="ic">🌎</span><span class="lbl">Assist Card</span>
+    </div>
     <div class="nav-item" onclick="navTo('archivos',this)">
       <span class="ic">📁</span><span class="lbl">Archivos</span>
     </div>
@@ -1252,6 +1255,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
         <option value="ganado">Ganado</option>
         <option value="perdido">Perdido</option>
       </select>
+      <button class="btn btn-outline" onclick="exportarCasosLegal()" style="margin-left:auto;" title="Exportar todos los casos a Excel">📥 Exportar Excel</button>
     </div>
     <div class="table-wrap">
       <div class="table-top-line"></div>
@@ -1419,6 +1423,30 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
                   <option value="union_libre">Unión libre</option>
                 </select>
               </div>
+              <!-- LIQUIDACIÓN SOCIEDAD CONYUGAL -->
+              <div style="grid-column:1/-1;margin-top:8px;">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--warn);font-weight:700;cursor:pointer;">
+                  <input type="checkbox" id="lc-tiene-liquidacion" onchange="lcToggleLiquidacion()" style="cursor:pointer;"> ⚖️ Requiere liquidación de sociedad conyugal
+                </label>
+              </div>
+              <div id="lc-liquidacion-fields" style="display:none;grid-column:1/-1;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:14px;margin-top:4px;">
+                <div style="font-size:11px;font-weight:800;color:var(--warn);letter-spacing:1px;margin-bottom:12px;">⚖️ LIQUIDACIÓN SOCIEDAD CONYUGAL</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                  <div class="form-group"><label>Fecha Matrimonio / Unión</label><input type="date" id="lc-liq-fecha-union"></div>
+                  <div class="form-group"><label>Fecha Separación / Fallecimiento</label><input type="date" id="lc-liq-fecha-sep"></div>
+                  <div class="form-group"><label>Bienes en común</label><textarea id="lc-liq-bienes" placeholder="Inmuebles, vehículos, cuentas bancarias..." style="min-height:60px;"></textarea></div>
+                  <div class="form-group"><label>Deudas en común</label><textarea id="lc-liq-deudas" placeholder="Créditos, hipotecas, obligaciones..." style="min-height:60px;"></textarea></div>
+                  <div class="form-group"><label>Estado Liquidación</label>
+                    <select id="lc-liq-estado" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:9px 12px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;width:100%;outline:none;">
+                      <option value="pendiente">Pendiente</option>
+                      <option value="en_proceso">En proceso</option>
+                      <option value="liquidada">Liquidada</option>
+                    </select>
+                  </div>
+                  <div class="form-group"><label>Notaría / Juzgado Liquidación</label><input id="lc-liq-notaria" placeholder="Ej: Notaría 5 de Medellín"></div>
+                  <div class="form-group" style="grid-column:1/-1"><label>Observaciones Liquidación</label><textarea id="lc-liq-obs" placeholder="Detalles adicionales de la liquidación..." style="min-height:60px;"></textarea></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1446,6 +1474,30 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
 
         </div>
         <div class="form-group" style="grid-column:1/-1"><label>Observaciones Internas</label><textarea id="lc-obs" placeholder="Notas internas..." style="min-height:60px;"></textarea></div>
+
+        <!-- BITÁCORA DEL CASO -->
+        <div style="grid-column:1/-1;background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;margin-top:8px;">
+          <div style="font-size:11px;font-weight:800;color:var(--ciel);letter-spacing:1px;text-transform:uppercase;margin-bottom:14px;">📋 BITÁCORA DEL CASO</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 2fr 80px;gap:10px;margin-bottom:10px;align-items:end;">
+            <div class="form-group" style="margin:0;"><label style="font-size:11px;">Fecha</label><input type="date" id="lc-bit-fecha" style="font-size:12px;"></div>
+            <div class="form-group" style="margin:0;"><label style="font-size:11px;">Tipo de Acción</label>
+              <select id="lc-bit-tipo" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:9px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;width:100%;outline:none;">
+                <option value="llamada">📞 Llamada</option>
+                <option value="reunion">🤝 Reunión</option>
+                <option value="documento">📄 Documento</option>
+                <option value="audiencia">⚖️ Audiencia</option>
+                <option value="notificacion">📬 Notificación</option>
+                <option value="diligencia">🏛️ Diligencia</option>
+                <option value="otro">📌 Otro</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;"><label style="font-size:11px;">Descripción</label><input id="lc-bit-desc" placeholder="¿Qué se hizo?" style="font-size:12px;"></div>
+            <button type="button" onclick="lcAddBitacora()" style="background:var(--pri);border:none;border-radius:8px;padding:9px 12px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;height:37px;">＋ Agregar</button>
+          </div>
+          <div id="lc-bitacora-list" style="max-height:200px;overflow-y:auto;">
+            <div id="lc-bitacora-empty" style="font-size:12px;color:var(--t3);text-align:center;padding:10px 0;">Sin acciones registradas — comienza la bitácora</div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1537,6 +1589,158 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="cerrarModal('modal-legal-honorario')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarHonorario()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ASSIST CARD ══════════════════════════════════════════════════════════ -->
+<div class="page" id="page-assist">
+  <div class="page-header">
+    <h1 class="page-title">🌎 Assist Card</h1>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline" onclick="exportarAssist()">📥 Exportar Excel</button>
+      <button class="btn btn-outline" onclick="abrirImportAssist()">📤 Importar Excel</button>
+      <button class="btn btn-primary" onclick="abrirNuevoAssist()">＋ Nuevo Voucher</button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;" id="assist-kpis">
+    <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+      <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#2F4D8A,#68D7FF);"></div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">🌎 TOTAL VOUCHERS</div>
+      <div style="font-size:28px;font-weight:900;color:var(--ciel);" id="ac-total">0</div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+      <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--ok);"></div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">✅ CON COMISIÓN</div>
+      <div style="font-size:28px;font-weight:900;color:var(--ok);" id="ac-comision">0</div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+      <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--ciel);"></div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">🔗 CRUCE CARTERA</div>
+      <div style="font-size:28px;font-weight:900;color:var(--ciel);" id="ac-cruce">0</div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+      <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--warn);"></div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">🌍 NACIONALIDADES</div>
+      <div style="font-size:28px;font-weight:900;color:var(--warn);" id="ac-nac">0</div>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+    <div class="input-search" style="max-width:300px;">
+      <span style="color:var(--t3)">🔍</span>
+      <input placeholder="Buscar por nombre, voucher, documento..." id="assist-search" oninput="filtrarAssist()">
+    </div>
+    <select class="btn btn-outline" id="assist-filtro-nac" onchange="filtrarAssist()" style="font-family:Nunito,sans-serif;">
+      <option value="">Todas las nacionalidades</option>
+    </select>
+    <select class="btn btn-outline" id="assist-filtro-estado" onchange="filtrarAssist()" style="font-family:Nunito,sans-serif;">
+      <option value="">Todos los estados</option>
+      <option value="pagado">✅ Comisión pagada</option>
+      <option value="pendiente">⏳ Pendiente</option>
+      <option value="cruce">🔗 En cartera Sekiury</option>
+    </select>
+    <div style="margin-left:auto;font-size:12px;color:var(--t3);" id="assist-count">0 vouchers</div>
+  </div>
+
+  <!-- Tabla -->
+  <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;overflow:hidden;">
+    <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr 100px;padding:10px 16px;border-bottom:1px solid var(--bdr);gap:8px;">
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">CLIENTE</div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">VOUCHER</div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">NACIONALIDAD</div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">VIGENCIA</div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">CRUCE</div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">COMISIÓN</div>
+    </div>
+    <div id="assist-lista">
+      <div class="empty-state" style="padding:60px 0;">
+        <div class="ei">🌎</div>
+        <div class="et">Sin datos Assist Card</div>
+        <div class="es">Importa el Excel de Assist Card para comenzar</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nuevo Voucher Assist Card -->
+<div class="modal-overlay" id="modal-nuevo-assist">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <h2 id="assist-modal-title">🌎 Nuevo Voucher Assist Card</h2>
+      <button class="modal-close" onclick="cerrarModal('modal-nuevo-assist')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:24px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group" style="grid-column:1/-1"><label>Nombre Completo</label><input id="ac-nombre" placeholder="Nombre del cliente"></div>
+        <div class="form-group"><label>DNI / Cédula</label><input id="ac-documento" placeholder="Número de documento"></div>
+        <div class="form-group"><label>Nacionalidad</label>
+          <input id="ac-nacionalidad" list="ac-nac-list" placeholder="Seleccionar o escribir...">
+          <datalist id="ac-nac-list">
+            <option value="Argentina"><option value="Bolivia"><option value="Brasil">
+            <option value="Chile"><option value="Colombia"><option value="Costa Rica">
+            <option value="Cuba"><option value="Ecuador"><option value="El Salvador">
+            <option value="España"><option value="Estados Unidos"><option value="Guatemala">
+            <option value="Honduras"><option value="México"><option value="Nicaragua">
+            <option value="Panamá"><option value="Paraguay"><option value="Perú">
+            <option value="Puerto Rico"><option value="República Dominicana"><option value="Uruguay">
+            <option value="Venezuela"><option value="Italia"><option value="Francia">
+            <option value="Alemania"><option value="Reino Unido"><option value="Portugal">
+            <option value="Israel"><option value="Japón"><option value="China">
+            <option value="Australia"><option value="Canadá">
+          </datalist>
+        </div>
+        <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="ac-nacimiento"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>Email</label><input type="email" id="ac-email" placeholder="correo@ejemplo.com"></div>
+        <div class="form-group"><label># Voucher</label><input id="ac-voucher" placeholder="Número de voucher"></div>
+        <div class="form-group"><label>Plan</label><input id="ac-plan" placeholder="Ej: Classic, Gold, Platinum..."></div>
+        <div class="form-group"><label>Vigencia Desde</label><input type="date" id="ac-desde"></div>
+        <div class="form-group"><label>Vigencia Hasta</label><input type="date" id="ac-hasta"></div>
+        <div class="form-group"><label>Valor del Seguro (USD)</label>
+          <input type="number" id="ac-valor" placeholder="0" oninput="calcularComisionAssist()">
+        </div>
+        <div class="form-group"><label>% Comisión</label>
+          <input type="number" id="ac-pct-comision" value="40" min="0" max="100" oninput="calcularComisionAssist()">
+        </div>
+        <div class="form-group" style="grid-column:1/-1;background:rgba(144,255,217,.06);border:1px solid rgba(144,255,217,.2);border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:13px;color:var(--t3);">💰 Comisión calculada:</span>
+          <span id="ac-comision-calc" style="font-size:18px;font-weight:800;color:var(--ok);">USD $0.00</span>
+        </div>
+        <div class="form-group"><label>Estado Comisión</label>
+          <select id="ac-comision-estado" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:9px 12px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;width:100%;outline:none;">
+            <option value="pendiente">⏳ Pendiente</option>
+            <option value="pagado">✅ Pagada</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-nuevo-assist')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarNuevoAssist()">Guardar Voucher</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Import Assist Card -->
+<div class="modal-overlay" id="modal-import-assist">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <h2>📤 Importar Assist Card</h2>
+      <button class="modal-close" onclick="cerrarModal('modal-import-assist')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:24px;">
+      <div style="background:rgba(104,215,255,.08);border:1px solid rgba(104,215,255,.2);border-radius:10px;padding:14px;margin-bottom:16px;font-size:12px;color:var(--t2);line-height:1.6;">
+        <strong style="color:var(--ciel);">Columnas esperadas en el Excel:</strong><br>
+        Nombre, Fecha Nacimiento, DNI/CC, Nacionalidad, Voucher, Vigencia Desde, Vigencia Hasta, Plan
+      </div>
+      <input type="file" id="assist-file-input" accept=".xlsx,.xls" onchange="procesarImportAssist(this)" style="display:none;">
+      <button class="btn btn-primary" style="width:100%;padding:14px;" onclick="document.getElementById('assist-file-input').click()">
+        📂 Seleccionar archivo Excel
+      </button>
+      <div id="assist-import-preview" style="margin-top:16px;"></div>
     </div>
   </div>
 </div>
@@ -2889,13 +3093,14 @@ function navTo(page, el) {
   else document.querySelectorAll('.nav-item').forEach(n => {
     if (n.getAttribute('onclick') && n.getAttribute('onclick').includes("'"+page+"'")) n.classList.add('active');
   });
-  const titles = {dashboard:'Panel <span>Principal</span>',clientes:'<span>Clientes</span>',polizas:'<span>Pólizas</span>',cobros:'<span>Cobros</span>',recibos:'Recibos y <span>Cuadre de Caja</span>',tareas:'<span>Tareas</span>',siniestros:'<span>Siniestros</span>',informes:'<span>Informes</span>',archivos:'<span>Archivos</span>',comisiones:'<span>Comisiones</span>',config:'<span>Configuración</span>','motor-ia':'🧠 Motor <span>IA</span>',legal:'Sekiury <span>Legal</span>',pipeline:'📊 Pipeline <span>de Ventas</span>'};
+  const titles = {dashboard:'Panel <span>Principal</span>',clientes:'<span>Clientes</span>',polizas:'<span>Pólizas</span>',cobros:'<span>Cobros</span>',recibos:'Recibos y <span>Cuadre de Caja</span>',tareas:'<span>Tareas</span>',siniestros:'<span>Siniestros</span>',informes:'<span>Informes</span>',archivos:'<span>Archivos</span>',comisiones:'<span>Comisiones</span>',config:'<span>Configuración</span>','motor-ia':'🧠 Motor <span>IA</span>',legal:'Sekiury <span>Legal</span>',pipeline:'📊 Pipeline <span>de Ventas</span>',assist:'🌎 Assist <span>Card</span>'};
   document.getElementById('topbar-title').innerHTML = titles[page] || page;
   cerrarDetalle();
   if (page === 'informes') setTimeout(() => renderInformes(), 50);
   if (page === 'pipeline') setTimeout(() => initPipeline(), 50);
   if (page === 'config') setTimeout(() => { initConfig(); setCfgTab('aseg'); }, 50);
   if (page === 'legal') setTimeout(() => { setLegalTab('casos'); renderLegalKpis(); }, 50);
+  if (page === 'assist') setTimeout(() => initAssist(), 50);
   if (page === 'motor-ia') setTimeout(() => initMotorIA(), 150);
 }
 
@@ -2907,6 +3112,7 @@ function btnNuevoClick() {
   const active = document.querySelector('.page.active').id;
   if (active === 'page-clientes') { abrirNuevoCliente(); return; }
   if (active === 'page-polizas')  { abrirNuevaPoliza && abrirNuevaPoliza(); return; }
+  if (active === 'page-assist')   { abrirNuevoAssist(); return; }
   if (active === 'page-legal') {
     const clientes = getLegalClientes();
     if (clientes.length === 0) {
@@ -7730,6 +7936,96 @@ function setLegalTab(tab) {
 }
 
 // ── KPIs ──────────────────────────────────────────────────────────────────
+function exportarCasosLegal() {
+  const casos = getLegalCasos();
+  const clientes = getLegalClientes();
+  if (!casos.length) { showToast('No hay casos para exportar', 'err'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── HOJA 1: CASOS ──────────────────────────────────────────────────────
+  const casoRows = casos.map(c => {
+    const cli = clientes.find(x => x._id === c.cliente_id) || {};
+    return {
+      'ID Caso': c._id || '',
+      'Nombre del Caso': c.nombre_caso || '',
+      'Cliente': cli.nombre || '',
+      'Documento Cliente': cli.documento || '',
+      'Tipo': c.tipo || '',
+      'Estado': c.estado || '',
+      'Radicado': c.radicado || '',
+      'Juzgado / Entidad': c.juzgado || '',
+      'Fecha Apertura': c.fecha_apertura || '',
+      'Próxima Audiencia': c.prox_audiencia || '',
+      'Honorarios': c.honorarios || 0,
+      'Anticipo': c.anticipo || 0,
+      'Descripción': c.descripcion || '',
+      'Observaciones': c.obs || '',
+      'Causante': c.causante || '',
+      'CC Causante': c.causante_cc || '',
+      'Fecha Fallecimiento': c.fecha_fallecimiento || '',
+      'Escritura': c.escritura || '',
+      'Notaría': c.causante_notaria || '',
+      'Ciudad': c.causante_ciudad || '',
+      'Cónyuge': c.conyuge_nombre || '',
+      'CC Cónyuge': c.conyuge_cc || '',
+      'Tipo Unión': c.conyuge_tipo || '',
+      'Liquidación Conyugal': c.tiene_liquidacion ? 'Sí' : 'No',
+      'Estado Liquidación': c.liq_estado || '',
+      'Bienes en Común': c.liq_bienes || '',
+      'Deudas en Común': c.liq_deudas || '',
+      'N° Herederos': (c.herederos || []).length,
+      'N° Acciones Bitácora': (c.bitacora || []).length,
+    };
+  });
+  const ws1 = XLSX.utils.json_to_sheet(casoRows);
+  ws1['!cols'] = Object.keys(casoRows[0] || {}).map(() => ({ wch: 20 }));
+  XLSX.utils.book_append_sheet(wb, ws1, '📋 Casos');
+
+  // ── HOJA 2: HEREDEROS ─────────────────────────────────────────────────
+  const heredRows = [];
+  casos.forEach(c => {
+    (c.herederos || []).forEach(h => {
+      heredRows.push({
+        'Caso': c.nombre_caso || c._id,
+        'Tipo': c.tipo || '',
+        'Nombre Heredero': h.nombre || '',
+        'CC Heredero': h.cc || '',
+        'Parentesco': h.parentesco || '',
+        'Porcentaje': h.porcentaje || '',
+      });
+    });
+  });
+  if (heredRows.length) {
+    const ws2 = XLSX.utils.json_to_sheet(heredRows);
+    ws2['!cols'] = Object.keys(heredRows[0]).map(() => ({ wch: 22 }));
+    XLSX.utils.book_append_sheet(wb, ws2, '👥 Herederos');
+  }
+
+  // ── HOJA 3: BITÁCORA ──────────────────────────────────────────────────
+  const bitRows = [];
+  casos.forEach(c => {
+    (c.bitacora || []).forEach(b => {
+      bitRows.push({
+        'Caso': c.nombre_caso || c._id,
+        'Fecha': b.fecha || '',
+        'Tipo Acción': b.tipo || '',
+        'Descripción': b.desc || '',
+        'Registrado por': b.usuario || '',
+      });
+    });
+  });
+  if (bitRows.length) {
+    const ws3 = XLSX.utils.json_to_sheet(bitRows);
+    ws3['!cols'] = Object.keys(bitRows[0]).map(() => ({ wch: 25 }));
+    XLSX.utils.book_append_sheet(wb, ws3, '📋 Bitácora');
+  }
+
+  const fecha = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Sekiury_Legal_Casos_${fecha}.xlsx`);
+  showToast(`📥 ${casos.length} caso(s) exportados ✅`);
+}
+
 function renderLegalKpis() {
   const casos = getLegalCasos();
   const honorarios = getLegalHonorarios();
@@ -7876,10 +8172,26 @@ function editarCaso(id) {
     setV('lc-conyuge-cc', c.conyuge_cc);
     const chk = document.getElementById('lc-tiene-conyuge');
     if (chk) { chk.checked = !!c.tiene_conyuge; lcToggleConyuge(); }
+    // Liquidación sociedad conyugal
+    const chkLiq = document.getElementById('lc-tiene-liquidacion');
+    if (chkLiq) { chkLiq.checked = !!c.tiene_liquidacion; lcToggleLiquidacion(); }
+    if (c.tiene_liquidacion) {
+      setV('lc-liq-fecha-union', c.liq_fecha_union);
+      setV('lc-liq-fecha-sep', c.liq_fecha_sep);
+      setV('lc-liq-bienes', c.liq_bienes);
+      setV('lc-liq-deudas', c.liq_deudas);
+      setV('lc-liq-obs', c.liq_obs);
+      setV('lc-liq-notaria', c.liq_notaria);
+      const selLiq = document.getElementById('lc-liq-estado');
+      if (selLiq && c.liq_estado) selLiq.value = c.liq_estado;
+    }
     _lcHerederos = JSON.parse(JSON.stringify(c.herederos||[]));
     _lcTerceros  = JSON.parse(JSON.stringify(c.terceros||[]));
+    // Bitácora
+    lcBitacora = JSON.parse(JSON.stringify(c.bitacora||[]));
     lcRenderHerederos();
     lcRenderTerceros();
+    lcRenderBitacora();
   } else {
     lcResetIntervinientes();
   }
@@ -7919,6 +8231,72 @@ function lcToggleConyuge() {
   const fields = document.getElementById('lc-conyuge-fields');
   if (!fields) return;
   fields.style.display = chk?.checked ? 'grid' : 'none';
+  if (!chk?.checked) {
+    document.getElementById('lc-tiene-liquidacion').checked = false;
+    document.getElementById('lc-liquidacion-fields').style.display = 'none';
+  }
+}
+
+function lcToggleLiquidacion() {
+  const chk = document.getElementById('lc-tiene-liquidacion');
+  const fields = document.getElementById('lc-liquidacion-fields');
+  if (!fields) return;
+  fields.style.display = chk?.checked ? 'grid' : 'none';
+}
+
+// ── BITÁCORA ────────────────────────────────────────────────────────────────
+let lcBitacora = [];
+
+function lcAddBitacora() {
+  const fecha = document.getElementById('lc-bit-fecha').value;
+  const tipo = document.getElementById('lc-bit-tipo').value;
+  const desc = document.getElementById('lc-bit-desc').value.trim();
+  if (!desc) { showToast('Escribe una descripción de la acción', 'err'); return; }
+  const hoy = new Date().toISOString().slice(0,10);
+  lcBitacora.unshift({
+    id: genId(),
+    fecha: fecha || hoy,
+    tipo,
+    desc,
+    usuario: document.getElementById('sidebar-nombre')?.textContent || 'Asesor',
+    creado: new Date().toISOString()
+  });
+  document.getElementById('lc-bit-desc').value = '';
+  document.getElementById('lc-bit-fecha').value = '';
+  lcRenderBitacora();
+  showToast('✅ Acción registrada en bitácora');
+}
+
+function lcRenderBitacora() {
+  const lista = document.getElementById('lc-bitacora-list');
+  const empty = document.getElementById('lc-bitacora-empty');
+  if (!lista) return;
+  if (lcBitacora.length === 0) {
+    if (empty) empty.style.display = 'block';
+    lista.querySelectorAll('.bit-item').forEach(e => e.remove());
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  lista.querySelectorAll('.bit-item').forEach(e => e.remove());
+  const iconos = { llamada:'📞', reunion:'🤝', documento:'📄', audiencia:'⚖️', notificacion:'📬', diligencia:'🏛️', otro:'📌' };
+  lcBitacora.forEach(b => {
+    const div = document.createElement('div');
+    div.className = 'bit-item';
+    div.style.cssText = 'display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--bdr2);align-items:flex-start;';
+    div.innerHTML = `
+      <div style="font-size:18px;min-width:24px;">${iconos[b.tipo]||'📌'}</div>
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:700;color:var(--t1);">${b.desc}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px;">${b.fecha} · ${b.usuario}</div>
+      </div>
+      <button onclick="lcDelBitacora('${b.id}')" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;padding:0 4px;">✕</button>`;
+    lista.appendChild(div);
+  });
+}
+
+function lcDelBitacora(id) {
+  lcBitacora = lcBitacora.filter(b => b.id !== id);
+  lcRenderBitacora();
 }
 
 function lcRenderHerederos() {
@@ -8002,11 +8380,18 @@ function lcRemoveTercero(i) {
 function lcResetIntervinientes() {
   _lcHerederos = [];
   _lcTerceros  = [];
+  lcBitacora   = [];
   lcRenderHerederos();
   lcRenderTerceros();
+  lcRenderBitacora();
   const chk = document.getElementById('lc-tiene-conyuge');
   if (chk) chk.checked = false;
   lcToggleConyuge();
+  const chkLiq = document.getElementById('lc-tiene-liquidacion');
+  if (chkLiq) { chkLiq.checked = false; lcToggleLiquidacion(); }
+  ['lc-liq-fecha-union','lc-liq-fecha-sep','lc-liq-bienes','lc-liq-deudas','lc-liq-notaria','lc-liq-obs'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
   ['lc-causante','lc-causante-cc','lc-fecha-fallecimiento','lc-escritura',
    'lc-causante-notaria','lc-causante-ciudad','lc-conyuge-nombre','lc-conyuge-cc'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
@@ -8055,8 +8440,17 @@ function guardarCaso() {
     conyuge_nombre: document.getElementById('lc-conyuge-nombre')?.value?.trim() || '',
     conyuge_cc: document.getElementById('lc-conyuge-cc')?.value?.trim() || '',
     conyuge_tipo: document.getElementById('lc-conyuge-tipo')?.value || 'matrimonio',
+    tiene_liquidacion: document.getElementById('lc-tiene-liquidacion')?.checked || false,
+    liq_fecha_union: document.getElementById('lc-liq-fecha-union')?.value || '',
+    liq_fecha_sep: document.getElementById('lc-liq-fecha-sep')?.value || '',
+    liq_bienes: document.getElementById('lc-liq-bienes')?.value?.trim() || '',
+    liq_deudas: document.getElementById('lc-liq-deudas')?.value?.trim() || '',
+    liq_estado: document.getElementById('lc-liq-estado')?.value || 'pendiente',
+    liq_notaria: document.getElementById('lc-liq-notaria')?.value?.trim() || '',
+    liq_obs: document.getElementById('lc-liq-obs')?.value?.trim() || '',
     herederos: JSON.parse(JSON.stringify(_lcHerederos)),
     terceros: JSON.parse(JSON.stringify(_lcTerceros)),
+    bitacora: JSON.parse(JSON.stringify(lcBitacora)),
     nombre_caso: document.getElementById('lc-nombre-caso')?.value?.trim() || '',
     num_herederos: _lcHerederos.length,
     fecha_creacion: new Date().toISOString().split('T')[0],
@@ -8922,6 +9316,367 @@ actualizarDashboard();
 // ── HELPERS DE ACCESO A DATOS (para funciones en este bloque de script) ──
 function iaGetClientes() { return JSON.parse(localStorage.getItem('sekiury_clientes') || '[]'); }
 function iaGetPolizas()  { return JSON.parse(localStorage.getItem('sekiury_polizas')  || '[]'); }
+
+function iaGetClientes() { return JSON.parse(localStorage.getItem('sekiury_clientes') || '[]'); }
+
+// ══ ASSIST CARD ════════════════════════════════════════════════════════════════
+const AC_KEY = 'sekiury_assist_card';
+let acDatos = [];
+let acFiltrados = [];
+
+function getAssistDatos() { return JSON.parse(localStorage.getItem(AC_KEY) || '[]'); }
+function guardarAssist() { localStorage.setItem(AC_KEY, JSON.stringify(acDatos)); }
+
+function initAssist() {
+  acDatos = getAssistDatos();
+  acFiltrados = [...acDatos];
+  filtrarAssist();
+  actualizarKpisAssist();
+  poblarFiltroNacAssist();
+}
+
+function poblarFiltroNacAssist() {
+  const nacs = [...new Set(acDatos.map(a => a.nacionalidad).filter(Boolean))].sort();
+  const sel = document.getElementById('assist-filtro-nac');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Todas las nacionalidades</option>' +
+    nacs.map(n => `<option value="${n}">${n}</option>`).join('');
+  if (cur) sel.value = cur;
+}
+
+function actualizarKpisAssist() {
+  const clientes = iaGetClientes();
+  const polizas = JSON.parse(localStorage.getItem('sekiury_polizas') || '[]');
+  const total = acDatos.length;
+  const conComision = acDatos.filter(a => a.comision_estado === 'pagado').length;
+  const totalComision = acDatos.filter(a => a.comision_estado === 'pagado').reduce((s,a) => s + (a.valor_comision||0), 0);
+  const nacs = new Set(acDatos.map(a => a.nacionalidad).filter(Boolean)).size;
+  // Cruce: cuántos tienen también póliza en Sekiury
+  const cruce = acDatos.filter(a => {
+    const doc = (a.documento || '').trim();
+    return doc && (
+      clientes.some(c => c.numero_documento === doc) ||
+      polizas.some(p => p.cedula_cliente === doc)
+    );
+  }).length;
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setV('ac-total', total);
+  setV('ac-comision', conComision + (totalComision > 0 ? ` · USD $${totalComision.toLocaleString('es-CO',{minimumFractionDigits:0,maximumFractionDigits:0})}` : ''));
+  setV('ac-cruce', cruce);
+  setV('ac-nac', nacs);
+}
+
+function filtrarAssist() {
+  const q = (document.getElementById('assist-search')?.value || '').toLowerCase().trim();
+  const nac = document.getElementById('assist-filtro-nac')?.value || '';
+  const estado = document.getElementById('assist-filtro-estado')?.value || '';
+  const clientes = iaGetClientes();
+  const polizas = JSON.parse(localStorage.getItem('sekiury_polizas') || '[]');
+
+  acFiltrados = acDatos.filter(a => {
+    const doc = (a.documento || '').trim();
+    const enCartera = doc && (clientes.some(c => c.numero_documento === doc) || polizas.some(p => p.cedula_cliente === doc));
+    if (q && !`${a.nombre}${a.voucher}${a.documento}${a.nacionalidad}`.toLowerCase().includes(q)) return false;
+    if (nac && a.nacionalidad !== nac) return false;
+    if (estado === 'pagado' && a.comision_estado !== 'pagado') return false;
+    if (estado === 'pendiente' && a.comision_estado === 'pagado') return false;
+    if (estado === 'cruce' && !enCartera) return false;
+    return true;
+  });
+
+  renderAssist(clientes, polizas);
+  const cnt = document.getElementById('assist-count');
+  if (cnt) cnt.textContent = `${acFiltrados.length} vouchers`;
+}
+
+function renderAssist(clientes, polizas) {
+  const lista = document.getElementById('assist-lista');
+  if (!lista) return;
+  if (!acFiltrados.length) {
+    lista.innerHTML = `<div class="empty-state" style="padding:60px 0;"><div class="ei">🔍</div><div class="et">Sin resultados</div></div>`;
+    return;
+  }
+  lista.innerHTML = acFiltrados.map(a => {
+    const doc = (a.documento || '').trim();
+    const enCartera = doc && (clientes.some(c => c.numero_documento === doc) || polizas.some(p => p.cedula_cliente === doc));
+    const pagado = a.comision_estado === 'pagado';
+    const sinVigencia = !a.vigencia_desde && !a.vigencia_hasta;
+    return `<div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr 120px;padding:12px 16px;border-bottom:1px solid var(--bdr2);gap:8px;align-items:center;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--t1);">${a.nombre||'—'}</div>
+        <div style="font-size:11px;color:var(--t3);">${a.documento||''} · 🎂 ${calcEdad(a.fecha_nacimiento)}</div>
+      </div>
+      <div style="font-size:13px;color:var(--ciel);font-weight:600;">${a.voucher||'—'}</div>
+      <div style="font-size:12px;color:var(--t2);">${a.nacionalidad||'—'}</div>
+      <div style="font-size:11px;color:${sinVigencia?'var(--err)':'var(--t3)'};">
+        ${sinVigencia ? '⚠️ Sin vigencia' : `${a.vigencia_desde||''}<br>${a.vigencia_hasta||''}`}
+      </div>
+      <div>${enCartera ? '<span style="color:var(--ok);font-size:12px;font-weight:700;">✅ En cartera</span>' : '<span style="color:var(--t3);font-size:11px;">Sin cruce</span>'}</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span onclick="toggleComisionAssist('${a._id}')" style="cursor:pointer;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;background:${pagado?'rgba(34,197,94,.15)':'rgba(245,158,11,.15)'};color:${pagado?'var(--ok)':'var(--warn)'};">
+          ${pagado ? '✅' : '⏳'}
+        </span>
+        <button onclick="editarAssist('${a._id}')" style="background:rgba(104,215,255,.1);border:1px solid rgba(104,215,255,.2);border-radius:8px;color:var(--ciel);cursor:pointer;font-size:13px;padding:4px 8px;" title="Editar">✏️</button>
+        <button onclick="eliminarAssist('${a._id}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:var(--err);cursor:pointer;font-size:13px;padding:4px 8px;" title="Eliminar">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function calcEdad(fecha) {
+  if (!fecha) return '—';
+  try {
+    const años = Math.floor((new Date() - new Date(fecha)) / (365.25*24*3600*1000));
+    return años > 0 ? `${años} años` : '—';
+  } catch { return '—'; }
+}
+
+function toggleComisionAssist(id) {
+  const idx = acDatos.findIndex(a => a._id === id);
+  if (idx < 0) return;
+  acDatos[idx].comision_estado = acDatos[idx].comision_estado === 'pagado' ? 'pendiente' : 'pagado';
+  guardarAssist();
+  actualizarKpisAssist();
+  filtrarAssist();
+  showToast(acDatos[idx].comision_estado === 'pagado' ? '✅ Comisión marcada como pagada' : '⏳ Marcada como pendiente');
+}
+
+function editarAssist(id) {
+  const a = acDatos.find(x => x._id === id);
+  if (!a) return;
+  _editAssistId = id;
+  document.getElementById('assist-modal-title').textContent = '✏️ Editar Voucher Assist Card';
+  document.getElementById('ac-nombre').value = a.nombre || '';
+  document.getElementById('ac-documento').value = a.documento || '';
+  document.getElementById('ac-nacionalidad').value = a.nacionalidad || '';
+  document.getElementById('ac-nacimiento').value = a.fecha_nacimiento || '';
+  document.getElementById('ac-email').value = a.email || '';
+  document.getElementById('ac-voucher').value = a.voucher || '';
+  document.getElementById('ac-plan').value = a.plan || '';
+  document.getElementById('ac-desde').value = a.vigencia_desde || '';
+  document.getElementById('ac-hasta').value = a.vigencia_hasta || '';
+  document.getElementById('ac-valor').value = a.valor_seguro || '';
+  document.getElementById('ac-pct-comision').value = a.pct_comision || 40;
+  document.getElementById('ac-comision-estado').value = a.comision_estado || 'pendiente';
+  calcularComisionAssist();
+  abrirModal('modal-nuevo-assist');
+}
+
+function eliminarAssist(id) {
+  if (!confirm('¿Eliminar este voucher?')) return;
+  acDatos = acDatos.filter(a => a._id !== id);
+  guardarAssist();
+  actualizarKpisAssist();
+  filtrarAssist();
+  showToast('Voucher eliminado');
+}
+
+function abrirImportAssist() {
+  document.getElementById('assist-import-preview').innerHTML = '';
+  abrirModal('modal-import-assist');
+}
+
+function calcularComisionAssist() {
+  const valor = parseFloat(document.getElementById('ac-valor')?.value) || 0;
+  const pct = parseFloat(document.getElementById('ac-pct-comision')?.value) || 0;
+  const comision = valor * (pct / 100);
+  const el = document.getElementById('ac-comision-calc');
+  if (el) el.textContent = `USD $${comision.toLocaleString('es-CO', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+}
+
+let _editAssistId = null;
+
+function abrirNuevoAssist() {
+  _editAssistId = null;
+  document.getElementById('assist-modal-title').textContent = '🌎 Nuevo Voucher Assist Card';
+  ['ac-nombre','ac-documento','ac-nacionalidad','ac-plan','ac-voucher','ac-email'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['ac-nacimiento','ac-desde','ac-hasta'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('ac-valor').value = '';
+  document.getElementById('ac-pct-comision').value = '40';
+  document.getElementById('ac-comision-calc').textContent = 'USD $0.00';
+  document.getElementById('ac-comision-estado').value = 'pendiente';
+  abrirModal('modal-nuevo-assist');
+}
+
+function guardarNuevoAssist() {
+  const nombre = document.getElementById('ac-nombre').value.trim();
+  const voucher = document.getElementById('ac-voucher').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio', 'err'); return; }
+  if (!voucher) { showToast('El número de voucher es obligatorio', 'err'); return; }
+  const valor = parseFloat(document.getElementById('ac-valor').value) || 0;
+  const pct = parseFloat(document.getElementById('ac-pct-comision').value) || 40;
+  const nacionalidad = document.getElementById('ac-nacionalidad').value.trim();
+  const documento = document.getElementById('ac-documento').value.trim();
+
+  const data = {
+    nombre,
+    documento,
+    nacionalidad,
+    fecha_nacimiento: document.getElementById('ac-nacimiento').value,
+    email: document.getElementById('ac-email').value.trim(),
+    voucher,
+    plan: document.getElementById('ac-plan').value.trim(),
+    vigencia_desde: document.getElementById('ac-desde').value,
+    vigencia_hasta: document.getElementById('ac-hasta').value,
+    valor_seguro: valor,
+    pct_comision: pct,
+    valor_comision: valor * (pct / 100),
+    comision_estado: document.getElementById('ac-comision-estado').value,
+    fecha_import: new Date().toISOString().slice(0,10),
+  };
+
+  if (_editAssistId) {
+    const idx = acDatos.findIndex(a => a._id === _editAssistId);
+    if (idx >= 0) acDatos[idx] = {...acDatos[idx], ...data};
+    showToast('✅ Voucher actualizado');
+  } else {
+    data._id = 'ac_' + genId();
+    acDatos.push(data);
+    showToast('✅ Voucher registrado');
+  }
+
+  // ── AUTO-REGISTRO COMO PROSPECTO (solo colombianos) ───────────────────
+  const esColombiano = nacionalidad.toLowerCase().includes('colomb');
+  if (esColombiano && documento) {
+    const existe = clientes.find(c => c.numero_documento === documento);
+    if (!existe) {
+      const nombreParts = nombre.trim().split(' ');
+      const mitad = Math.ceil(nombreParts.length / 2);
+      const nuevoCliente = {
+        _id: 'cli_ac_' + genId(),
+        tipo_persona: 'natural',
+        tipo_documento: 'CC',
+        numero_documento: documento,
+        nombre: nombreParts.slice(0, mitad).join(' '),
+        apellidos: nombreParts.slice(mitad).join(' '),
+        fecha_nacimiento: data.fecha_nacimiento || '',
+        email: data.email || '',
+        estado: 'prospecto',
+        observaciones: `Cliente Assist Card · Voucher ${voucher} · Oportunidad cross-sell`,
+      };
+      clientes.push(nuevoCliente);
+      guardarLS();
+      setTimeout(() => showToast('🇨🇴 Registrado como prospecto en Clientes Sekiury'), 500);
+    }
+  }
+
+  guardarAssist();
+  poblarFiltroNacAssist();
+  actualizarKpisAssist();
+  filtrarAssist();
+  cerrarModal('modal-nuevo-assist');
+}
+
+function procesarImportAssist(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) { showToast('El archivo está vacío', 'err'); return; }
+
+      // Mapeo flexible de columnas
+      const mapear = (row, posibles) => {
+        for (const k of posibles) {
+          const found = Object.keys(row).find(rk => rk.toLowerCase().includes(k.toLowerCase()));
+          if (found && row[found]) return String(row[found]).trim();
+        }
+        return '';
+      };
+
+      const nuevos = rows.map(row => ({
+        _id: 'ac_' + genId(),
+        nombre: mapear(row, ['nombre','name','cliente']),
+        fecha_nacimiento: mapear(row, ['nacimiento','birth','fecha nac']),
+        documento: mapear(row, ['dni','cc','cedula','documento','document','identif']),
+        nacionalidad: mapear(row, ['nacion','nation','pais','country','país']),
+        voucher: mapear(row, ['voucher','poliza','póliza','numero','number','vaucher']),
+        vigencia_desde: mapear(row, ['desde','inicio','start','from','vigencia desde']),
+        vigencia_hasta: mapear(row, ['hasta','fin','end','to','vigencia hasta']),
+        plan: mapear(row, ['plan','producto','product','tipo']),
+        comision_estado: 'pendiente',
+        fecha_import: new Date().toISOString().slice(0,10),
+      }));
+
+      // Preview
+      const preview = document.getElementById('assist-import-preview');
+      preview.innerHTML = `
+        <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;color:var(--ok);">✅ ${nuevos.length} registros encontrados</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:4px;">Primer registro: ${nuevos[0]?.nombre} · ${nuevos[0]?.voucher} · ${nuevos[0]?.nacionalidad}</div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-outline" style="flex:1;" onclick="importAssistReemplazar(${JSON.stringify(nuevos).replace(/"/g,'&quot;')})">🔄 Reemplazar todo</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="importAssistAgregar(${JSON.stringify(nuevos).replace(/"/g,'&quot;')})">➕ Agregar a existentes</button>
+        </div>`;
+    } catch(err) {
+      showToast('Error al leer el archivo', 'err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function importAssistReemplazar(nuevos) {
+  acDatos = nuevos;
+  guardarAssist();
+  poblarFiltroNacAssist();
+  actualizarKpisAssist();
+  filtrarAssist();
+  cerrarModal('modal-import-assist');
+  showToast(`✅ ${nuevos.length} vouchers importados`);
+}
+
+function importAssistAgregar(nuevos) {
+  // Evitar duplicados por voucher
+  const existentes = new Set(acDatos.map(a => a.voucher));
+  const sinDup = nuevos.filter(n => !existentes.has(n.voucher));
+  acDatos = [...acDatos, ...sinDup];
+  guardarAssist();
+  poblarFiltroNacAssist();
+  actualizarKpisAssist();
+  filtrarAssist();
+  cerrarModal('modal-import-assist');
+  showToast(`✅ ${sinDup.length} nuevos vouchers agregados (${nuevos.length - sinDup.length} duplicados omitidos)`);
+}
+
+function exportarAssist() {
+  if (!acDatos.length) { showToast('No hay datos para exportar', 'err'); return; }
+  const clientes = iaGetClientes();
+  const polizas = JSON.parse(localStorage.getItem('sekiury_polizas') || '[]');
+
+  const rows = acDatos.map(a => {
+    const doc = (a.documento || '').trim();
+    const enCartera = doc && (clientes.some(c => c.numero_documento === doc) || polizas.some(p => p.cedula_cliente === doc));
+    return {
+      'Nombre': a.nombre || '',
+      'Fecha Nacimiento': a.fecha_nacimiento || '',
+      'DNI / CC': a.documento || '',
+      'Nacionalidad': a.nacionalidad || '',
+      'Voucher': a.voucher || '',
+      'Vigencia Desde': a.vigencia_desde || '',
+      'Vigencia Hasta': a.vigencia_hasta || '',
+      'Plan': a.plan || '',
+      'Comisión': a.comision_estado === 'pagado' ? 'Pagada' : 'Pendiente',
+      'En Cartera Sekiury': enCartera ? 'Sí' : 'No',
+      'Fecha Importación': a.fecha_import || '',
+    };
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = Object.keys(rows[0]).map(() => ({ wch: 20 }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Assist Card');
+  XLSX.writeFile(wb, `Sekiury_AssistCard_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast(`📥 ${rows.length} vouchers exportados`);
+}
 
 // ══ PIPELINE KANBAN ═══════════════════════════════════════════════════════════
 
