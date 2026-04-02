@@ -1153,6 +1153,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:var(--t3);font-size:13px;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">
       🏢 Por Aseguradora
     </button>
+    <button id="tab-pagos-com" onclick="setTabComision('pagos')"
+      style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:var(--t3);font-size:13px;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">
+      💰 Pagadas / Pendientes
+    </button>
   </div>
 
   <!-- TAB: TABLA DE COMISIONES -->
@@ -1197,7 +1201,58 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div id="resumen-asesores"></div>
   </div>
 
-  <!-- TAB: POR ASEGURADORA -->
+  <!-- TAB: PAGADAS / PENDIENTES -->
+  <div id="tab-content-pagos" style="display:none;">
+    <div class="page-header">
+      <div><h1>Comisiones <span style="color:var(--ciel)">Pagadas / Pendientes</span></h1><p>Control de comisiones por mes</p></div>
+      <button class="btn btn-outline" onclick="exportarComisionesPagos()">📥 Exportar Excel</button>
+    </div>
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+      <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--ok);"></div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">✅ TOTAL PAGADO</div>
+        <div style="font-size:22px;font-weight:900;color:var(--ok);" id="cp-total-pagado">$0</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--warn);"></div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">⏳ TOTAL PENDIENTE</div>
+        <div style="font-size:22px;font-weight:900;color:var(--warn);" id="cp-total-pendiente">$0</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--ciel);"></div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">📋 REGISTROS</div>
+        <div style="font-size:22px;font-weight:900;color:var(--ciel);" id="cp-total-reg">0</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:16px;position:relative;overflow:hidden;">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--err);"></div>
+        <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;">📅 MES ACTUAL</div>
+        <div style="font-size:22px;font-weight:900;color:var(--err);" id="cp-mes-actual">$0</div>
+      </div>
+    </div>
+    <!-- Filtro mes -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
+      <select id="cp-filtro-mes" class="btn btn-outline" onchange="renderComisionesPagos()" style="font-family:Nunito,sans-serif;">
+        <option value="">Todos los meses</option>
+      </select>
+      <select id="cp-filtro-estado" class="btn btn-outline" onchange="renderComisionesPagos()" style="font-family:Nunito,sans-serif;">
+        <option value="">Todos los estados</option>
+        <option value="pendiente">⏳ Pendientes</option>
+        <option value="pagado">✅ Pagadas</option>
+      </select>
+    </div>
+    <!-- Lista -->
+    <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:2fr 1.5fr 1fr 1fr 100px;padding:10px 16px;border-bottom:1px solid var(--bdr);gap:8px;">
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">CONCEPTO / CLIENTE</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">PÓLIZA / ASEGURADORA</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">FECHA</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">VALOR</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">ESTADO</div>
+      </div>
+      <div id="cp-lista"></div>
+    </div>
+  </div>
   <div id="tab-content-aseguradora" style="display:none;">
     <div class="page-header">
       <div><h1>Comisiones por <span style="color:var(--ciel)">Aseguradora</span></h1><p>Producción y comisiones por compañía</p></div>
@@ -1929,6 +1984,14 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
           <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--rosa);display:block;margin-bottom:5px;">🗺️ Mapfre / Otros</label>
           <textarea id="conocimiento-otros" rows="3" placeholder="Mapfre, Allianz, Assist Card, SBS. Productos, condiciones, canales de contacto..." style="width:100%;background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:9px 12px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--rosa)'" onblur="this.style.borderColor='var(--bdr)'"></textarea>
         </div>
+        <div>
+          <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--warn);display:block;margin-bottom:5px;">🚗 Qualitas</label>
+          <textarea id="conocimiento-qualitas" rows="3" placeholder="Ramos, productos, ejecutivo de cuenta, tarifas, requisitos, tiempos de emisión..." style="width:100%;background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:9px 12px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--warn)'" onblur="this.style.borderColor='var(--bdr)'"></textarea>
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--ok);display:block;margin-bottom:5px;">🌍 Mundial</label>
+          <textarea id="conocimiento-mundial" rows="3" placeholder="Ramos, productos, ejecutivo de cuenta, tarifas, requisitos, tiempos de emisión..." style="width:100%;background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:9px 12px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;resize:vertical;" onfocus="this.style.borderColor='var(--ok)'" onblur="this.style.borderColor='var(--bdr)'"></textarea>
+        </div>
       </div>
     </div>
 
@@ -1999,6 +2062,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
             <option value="">Sin definir</option>
             <option>Bolívar</option><option>SURA</option><option>HDI</option>
             <option>Mapfre</option><option>Allianz</option><option>SBS</option><option>Assist Card</option>
+            <option>Qualitas</option><option>Mundial</option>
           </select>
         </div>
         <div class="form-group">
@@ -4867,7 +4931,7 @@ let polizas = seedPolizas();
 let filtradas_p = [...polizas];
 
 // ── DATOS MAESTROS (Sofseguros) ─────────────────────────────────────────────
-const ASEGURADORAS_DATA = [{"id": 169427, "nombre": "AXA COLPATRIA SEGUROS", "nit": "860002184-6", "email": "factura@axa.com", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169428, "nombre": "HDI SEGUROS", "nit": "860004875-6", "email": null, "codigo": null, "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169429, "nombre": "ALLIANZ SEGUROS S.A", "nit": "860026182-5", "email": "factura@allianz.com.co", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169430, "nombre": "SEGUROS GENERALES SURAMERICANA S.A", "nit": "890903407-9", "email": "FESOLAYAHERRERA@sura.com.co", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169431, "nombre": "SEGUROS COMERCIALES BOLIVAR S.A.", "nit": "860002180-7", "email": "facturasintermediarios@segurosbolivar.com", "codigo": "80244.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169882, "nombre": "TERRA PROTECTION INC TAX", "nit": "463987413-0", "email": "Tesoreriacol@twglobalprotection.com", "codigo": "41888.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169883, "nombre": "ASSIST CARD DE COLOMBIA S.A.S", "nit": "800239454-1", "email": "comisiones@assistcard.com", "codigo": "86774.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169884, "nombre": "MAPFRE COLOMBIA VIDA SEGUROS S A", "nit": "830054904-6", "email": "facturavida@mapfre.com.co", "codigo": "97814.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169885, "nombre": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "nit": "891700037-9", "email": "facturagenerales@mapfre.com.co", "codigo": "97814.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169886, "nombre": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "nit": "860002503-2", "email": "facturasintermediarios@segurosbolivar.com", "codigo": "80244.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169887, "nombre": "HDI SEGUROS COLOMBIA S.A", "nit": "860039988-0", "email": "facturaelectronica@hdiseguros.com.co", "codigo": "90885.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169888, "nombre": "SEGUROS DE VIDA SURAMERICANA S.A", "nit": "890903790-5", "email": "fesolayaherrera@sura.com.co", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}];
+const ASEGURADORAS_DATA = [{"id": 169427, "nombre": "AXA COLPATRIA SEGUROS", "nit": "860002184-6", "email": "factura@axa.com", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169428, "nombre": "HDI SEGUROS", "nit": "860004875-6", "email": null, "codigo": null, "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169429, "nombre": "ALLIANZ SEGUROS S.A", "nit": "860026182-5", "email": "factura@allianz.com.co", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169430, "nombre": "SEGUROS GENERALES SURAMERICANA S.A", "nit": "890903407-9", "email": "FESOLAYAHERRERA@sura.com.co", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169431, "nombre": "SEGUROS COMERCIALES BOLIVAR S.A.", "nit": "860002180-7", "email": "facturasintermediarios@segurosbolivar.com", "codigo": "80244.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169882, "nombre": "TERRA PROTECTION INC TAX", "nit": "463987413-0", "email": "Tesoreriacol@twglobalprotection.com", "codigo": "41888.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169883, "nombre": "ASSIST CARD DE COLOMBIA S.A.S", "nit": "800239454-1", "email": "comisiones@assistcard.com", "codigo": "86774.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169884, "nombre": "MAPFRE COLOMBIA VIDA SEGUROS S A", "nit": "830054904-6", "email": "facturavida@mapfre.com.co", "codigo": "97814.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169885, "nombre": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "nit": "891700037-9", "email": "facturagenerales@mapfre.com.co", "codigo": "97814.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169886, "nombre": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "nit": "860002503-2", "email": "facturasintermediarios@segurosbolivar.com", "codigo": "80244.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169887, "nombre": "HDI SEGUROS COLOMBIA S.A", "nit": "860039988-0", "email": "facturaelectronica@hdiseguros.com.co", "codigo": "90885.0", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169888, "nombre": "SEGUROS DE VIDA SURAMERICANA S.A", "nit": "890903790-5", "email": "fesolayaherrera@sura.com.co", "codigo": "9919.0", "pct_retencion": 0.11, "pct_iva": 0.0, "pct_ret_iva": 0.0, "pct_ret_ica": 0.0}, {"id": 169889, "nombre": "QUALITAS COMPAÑIA DE SEGUROS", "nit": "901234567-0", "email": "", "codigo": "", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}, {"id": 169890, "nombre": "SEGUROS MUNDIAL S.A", "nit": "860002097-1", "email": "", "codigo": "", "pct_retencion": 0.11, "pct_iva": 0.19, "pct_ret_iva": 0.15, "pct_ret_ica": 0.01}];
 const RAMOS_DATA = [{"id": 141759, "ramo": "SALUD", "subramo": "Salud", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 141759, "ramo": "SALUD", "subramo": "Salud", "aseguradora": "AXA COLPATRIA SEGUROS", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 141759, "ramo": "SALUD", "subramo": "Salud", "aseguradora": "HDI SEGUROS", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 141759, "ramo": "SALUD", "subramo": "Salud", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 141760, "ramo": "VIDA", "subramo": "Vida", "aseguradora": "HDI SEGUROS", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 141760, "ramo": "VIDA", "subramo": "Vida", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 141761, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Vehículos", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.15, "pct_iva": 0.19}, {"id": 141762, "ramo": "TRANSPORTE", "subramo": "Transporte", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 141762, "ramo": "TRANSPORTE", "subramo": "Transporte", "aseguradora": "AXA COLPATRIA SEGUROS", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 141762, "ramo": "TRANSPORTE", "subramo": "Transporte", "aseguradora": "HDI SEGUROS", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 141762, "ramo": "TRANSPORTE", "subramo": "Transporte", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 141762, "ramo": "TRANSPORTE", "subramo": "Transporte", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 141763, "ramo": "TODO RIESGO", "subramo": "Todo riesgo", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 141763, "ramo": "TODO RIESGO", "subramo": "Todo riesgo", "aseguradora": "AXA COLPATRIA SEGUROS", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 141763, "ramo": "TODO RIESGO", "subramo": "Todo riesgo", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143006, "ramo": "ASISTENCIA MÉDICA", "subramo": "AC 35 AVENTURA", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143007, "ramo": "ASISTENCIA MÉDICA", "subramo": "AC 60 AVENTURA", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143008, "ramo": "ASISTENCIA MÉDICA", "subramo": "AC 35 AVENTURA RECEPTIVA", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143009, "ramo": "ASISTENCIA MÉDICA", "subramo": "AC 60 AVENTURA RECEPTIVA", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143010, "ramo": "ASISTENCIA MÉDICA", "subramo": "PRODUCTO NACIONAL", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143011, "ramo": "ASISTENCIA MÉDICA", "subramo": "AC 35 TURISMO", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143012, "ramo": "ASISTENCIA MÉDICA", "subramo": "AC 60 TURISMO", "aseguradora": "ASSIST CARD DE COLOMBIA S.A.S", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 143013, "ramo": "AUTOS/VEHÍCULOS", "subramo": "PESADOS", "aseguradora": "AXA COLPATRIA SEGUROS", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143014, "ramo": "SALUD", "subramo": "SALUD INTEGRAL", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.15, "pct_iva": 0.05}, {"id": 143015, "ramo": "SALUD", "subramo": "SALUD BIENESTAR Y SALUD", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 143016, "ramo": "SALUD", "subramo": "INTERNACIONAL ELITE ULTIMATE", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 143017, "ramo": "SALUD", "subramo": "INTERNACIONAL ESSENTIAL SELECT", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.2, "pct_iva": 0.05}, {"id": 143018, "ramo": "SALUD", "subramo": "COLECTIVO FAMILIAR", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.1, "pct_iva": 0.05}, {"id": 143019, "ramo": "VIDA INDIVIDUAL", "subramo": "VIDA INVERSION", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143020, "ramo": "VIDA INDIVIDUAL", "subramo": "VIDA INTEGRAL", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 143021, "ramo": "ACCIDENTES PERSONALES", "subramo": "HIJOS ADULTO MAYOR VIDA ACTIVA", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.2, "pct_iva": 0.0}, {"id": 143022, "ramo": "PYME", "subramo": "PYME EMPRESARIAL", "aseguradora": "HDI SEGUROS COLOMBIA S.A", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 143023, "ramo": "HOGAR", "subramo": "Hogar", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143023, "ramo": "HOGAR", "subramo": "Hogar", "aseguradora": "HDI SEGUROS COLOMBIA S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143023, "ramo": "HOGAR", "subramo": "Hogar", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143023, "ramo": "HOGAR", "subramo": "Hogar", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.15, "pct_iva": 0.19}, {"id": 143024, "ramo": "CUMPLIMIENTO", "subramo": "Cumplimiento", "aseguradora": "HDI SEGUROS COLOMBIA S.A", "pct_comision": 0.3, "pct_iva": 0.19}, {"id": 143024, "ramo": "CUMPLIMIENTO", "subramo": "Cumplimiento", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.3, "pct_iva": 0.19}, {"id": 143025, "ramo": "INCENDIO Y LÍNEAS ALIADAS", "subramo": "GLOBAL PROTECCION", "aseguradora": "HDI SEGUROS COLOMBIA S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143026, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOMOVILES", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143026, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOMOVILES", "aseguradora": "HDI SEGUROS COLOMBIA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143027, "ramo": "CUMPLIMIENTO", "subramo": "RESPONSABILIDAD CIVIL", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.3, "pct_iva": 0.19}, {"id": 143028, "ramo": "PYME", "subramo": "ALL RISK", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 143029, "ramo": "TRANSPORTE", "subramo": "TRANSPORTE AUTOMATICA", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143030, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOS ESTANDAR", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143031, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOS PREMIUM", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143032, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOS BASICO", "aseguradora": "SEGUROS COMERCIALES BOLIVAR S.A.", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143033, "ramo": "ASISTENCIA MÉDICA", "subramo": "CICLISMO CAT 4 NACIONAL", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143034, "ramo": "ASISTENCIA MÉDICA", "subramo": "DEPORTES 100K CAT4", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143035, "ramo": "ASISTENCIA MÉDICA", "subramo": "DEPORTES 100K CAT4 RECEPTIVO", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143036, "ramo": "ASISTENCIA MÉDICA", "subramo": "DEPORTES 70K CAT4", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143037, "ramo": "ASISTENCIA MÉDICA", "subramo": "DEPORTES 70K CAT4 RECEPTIVO", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143038, "ramo": "ASISTENCIA MÉDICA", "subramo": "FERIA EJECUTIVA TURISMO", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143039, "ramo": "ASISTENCIA MÉDICA", "subramo": "PRESIDENTE FERIA TURISMO", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143040, "ramo": "ASISTENCIA MÉDICA", "subramo": "FERIA TERRA-WORLD TURISMO", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143041, "ramo": "ASISTENCIA MÉDICA", "subramo": "LARGA ESTADIA 60", "aseguradora": "TERRA PROTECTION INC TAX", "pct_comision": 0.3, "pct_iva": 0.0}, {"id": 143042, "ramo": "RESPONSABILIDAD CIVIL", "subramo": "RESPONSABILIDAD CIVIL DERIVADA CUMPLIMIENTO", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.25, "pct_iva": 0.19}, {"id": 143043, "ramo": "RESPONSABILIDAD CIVIL", "subramo": "RESPOSABILIDAD CIVIL EXTRACONTRACTUAL ACTIVIDAD", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.225, "pct_iva": 0.19}, {"id": 143044, "ramo": "TRANSPORTE", "subramo": "TRANSPORTE DE MERCANCIAS", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.17, "pct_iva": 0.19}, {"id": 143045, "ramo": "TRANSPORTE", "subramo": "TRANSPORTE DE VALORES", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143046, "ramo": "SALUD", "subramo": "SALUD PARA TODOS BASICO", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143047, "ramo": "SALUD", "subramo": "PLAN COMPLEMENTARIO PLUS", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.08, "pct_iva": 0.05}, {"id": 143048, "ramo": "PLAN COMPLEMENTARIO", "subramo": "PLAN COMPLEMENTARIO 60+", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.08, "pct_iva": 0.05}, {"id": 143049, "ramo": "INCENDIO Y LÍNEAS ALIADAS", "subramo": "TODO RIESGO EMPRESARIAL", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.17, "pct_iva": 0.19}, {"id": 143050, "ramo": "RESPONSABILIDAD CIVIL PARA PROFESIONALES MÉDICOS", "subramo": "Responsabilidad civil para profesionales médicos", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.08, "pct_iva": 0.05}, {"id": 143051, "ramo": "MASCOTAS", "subramo": "MASCOTAS", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0015, "pct_iva": 0.19}, {"id": 143051, "ramo": "MASCOTAS", "subramo": "MASCOTAS", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.17, "pct_iva": 0.19}, {"id": 143052, "ramo": "MAQUINARIA Y EQUIPO/ROTURA MAQUINARIA", "subramo": "Maquinaria y Equipo/Rotura Maquinaria", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.1, "pct_iva": 0.19}, {"id": 143053, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOMOVILES BASICO", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.1, "pct_iva": 0.19}, {"id": 143054, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOMOVILES CLASICO", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.15, "pct_iva": 0.19}, {"id": 143055, "ramo": "AUTOS/VEHÍCULOS", "subramo": "AUTOMOVILES GLOBAL", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143056, "ramo": "AUTOS/VEHÍCULOS", "subramo": "MOTOS", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143057, "ramo": "AUTOS/VEHÍCULOS", "subramo": "VEHÍCULOS UTILITARIOS Y PESADOS", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143058, "ramo": "AUTOS/VEHÍCULOS", "subramo": "BICICLETAS", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143059, "ramo": "TODO RIESGO CONSTRUCCIÓN", "subramo": "Todo riesgo Construccion", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143060, "ramo": "RENTA EDUCATIVA", "subramo": "RENTA EDUCATIVA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0005, "pct_iva": 0.0}, {"id": 143060, "ramo": "RENTA EDUCATIVA", "subramo": "RENTA EDUCATIVA", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143061, "ramo": "RENTA PENSIONAL", "subramo": "RENTA PENSIONAL", "aseguradora": "SEGUROS GENERALES SURAMERICANA S.A", "pct_comision": 0.15, "pct_iva": 0.19}, {"id": 143062, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Poliza Mujer", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0013, "pct_iva": 0.19}, {"id": 143063, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Trebol Publico", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0005, "pct_iva": 0.19}, {"id": 143064, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Supertrebol", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143065, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Comercio Electronico", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0008, "pct_iva": 0.19}, {"id": 143066, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Modular", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0005, "pct_iva": 0.19}, {"id": 143067, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Econoauto", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0013, "pct_iva": 0.19}, {"id": 143068, "ramo": "HOGAR", "subramo": "Hogar Plus", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.002, "pct_iva": 0.19}, {"id": 143069, "ramo": "HOGAR", "subramo": "Hogar Trébol", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.002, "pct_iva": 0.19}, {"id": 143070, "ramo": "MULTIRIESGO", "subramo": "Todo Riesgo Pyme", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0015, "pct_iva": 0.19}, {"id": 143071, "ramo": "MULTIRIESGO", "subramo": "Todo Riego Pyme Integral", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0015, "pct_iva": 0.19}, {"id": 143072, "ramo": "INCENDIO Y LÍNEAS ALIADAS", "subramo": "Incendio Deudores", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.001, "pct_iva": 0.19}, {"id": 143073, "ramo": "HOGAR", "subramo": "Hogar Colectivo", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.002, "pct_iva": 0.19}, {"id": 143074, "ramo": "MULTIRIESGO", "subramo": "PYME Colectivo", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0015, "pct_iva": 0.19}, {"id": 143075, "ramo": "ARRENDAMIENTO", "subramo": "ARRENDAMIENTO", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.0015, "pct_iva": 0.19}, {"id": 143076, "ramo": "CUMPLIMIENTO", "subramo": "CUMPLIMIENTO ENTIDADES ESTATALES", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.003, "pct_iva": 0.19}, {"id": 143077, "ramo": "CUMPLIMIENTO", "subramo": "CUMPLIMIENTO A FAVOR DE PARTICULARES", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.003, "pct_iva": 0.19}, {"id": 143078, "ramo": "VIDA", "subramo": "a 20 o mas años VIDA PLUS", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0035, "pct_iva": 0.0}, {"id": 143079, "ramo": "VIDA", "subramo": "a 15 o mas años VIDA PLUS", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.003, "pct_iva": 0.0}, {"id": 143080, "ramo": "VIDA", "subramo": "a 10 o mas años VIDA PLUS", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0025, "pct_iva": 0.0}, {"id": 143081, "ramo": "VIDA", "subramo": "a 5 o mas años VIDA PLUS", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0025, "pct_iva": 0.0}, {"id": 143082, "ramo": "VIDA", "subramo": "a 20 o mas años TEMPORAL", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.004, "pct_iva": 0.0}, {"id": 143083, "ramo": "VIDA", "subramo": "a 15 o mas años TEMPORAL", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.003, "pct_iva": 0.0}, {"id": 143084, "ramo": "VIDA", "subramo": "a 10 o mas años TEMPORAL", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.003, "pct_iva": 0.0}, {"id": 143085, "ramo": "VIDA", "subramo": "a 5 o mas años TEMPORAL", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0025, "pct_iva": 0.0}, {"id": 143086, "ramo": "ACCIDENTES PERSONALES", "subramo": "ACCIDENTES PERSONALES", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.003, "pct_iva": 0.0}, {"id": 143086, "ramo": "ACCIDENTES PERSONALES", "subramo": "ACCIDENTES PERSONALES", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.275, "pct_iva": 0.0}, {"id": 143087, "ramo": "ACCIDENTES PERSONALES", "subramo": "FACILITY EVENTOS", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0035, "pct_iva": 0.0}, {"id": 143088, "ramo": "VIDA", "subramo": "a 20 o mas años VIVE 80", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.004, "pct_iva": 0.0}, {"id": 143089, "ramo": "VIDA", "subramo": "a 15 o mas años VIVE 80", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.003, "pct_iva": 0.0}, {"id": 143090, "ramo": "VIDA", "subramo": "a 10 o mas años VIVE 80", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.003, "pct_iva": 0.0}, {"id": 143091, "ramo": "VIDA", "subramo": "a 5 o mas años VIVE 80", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0025, "pct_iva": 0.0}, {"id": 143092, "ramo": "VIDA", "subramo": "8 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0002, "pct_iva": 0.0}, {"id": 143093, "ramo": "VIDA", "subramo": "7 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0002, "pct_iva": 0.0}, {"id": 143094, "ramo": "VIDA", "subramo": "6 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0002, "pct_iva": 0.0}, {"id": 143095, "ramo": "VIDA", "subramo": "5 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0002, "pct_iva": 0.0}, {"id": 143096, "ramo": "VIDA", "subramo": "4 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0002, "pct_iva": 0.0}, {"id": 143097, "ramo": "VIDA", "subramo": "3 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0001, "pct_iva": 0.0}, {"id": 143098, "ramo": "VIDA", "subramo": "2 AÑOS MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0001, "pct_iva": 0.0}, {"id": 143099, "ramo": "VIDA", "subramo": "1 AÑO MILLON VIDA", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0001, "pct_iva": 0.0}, {"id": 143100, "ramo": "VIDA", "subramo": "Prima Riesgo FLEXI AHORRO", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.0025, "pct_iva": 0.0}, {"id": 143101, "ramo": "SALUD", "subramo": "SALUD FAMILIAR", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.15, "pct_iva": 0.05}, {"id": 143101, "ramo": "SALUD", "subramo": "SALUD FAMILIAR", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.13, "pct_iva": 0.05}, {"id": 143102, "ramo": "VIDA INDIVIDUAL", "subramo": "VIDA INDIVIDUAL", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 143102, "ramo": "VIDA INDIVIDUAL", "subramo": "VIDA INDIVIDUAL", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 143103, "ramo": "INCENDIO Y LÍNEAS ALIADAS", "subramo": "MIPYME", "aseguradora": "ALLIANZ SEGUROS S.A", "pct_comision": 0.2, "pct_iva": 0.19}, {"id": 143104, "ramo": "ARL", "subramo": "ARL", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.06, "pct_iva": 0.0}, {"id": 143104, "ramo": "ARL", "subramo": "ARL", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.05, "pct_iva": 0.0}, {"id": 143105, "ramo": "ENFERMEDADES", "subramo": "ENFERMEDADES GRAVES", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.275, "pct_iva": 0.0}, {"id": 143106, "ramo": "PLAN COMPLEMENTARIO", "subramo": "PLAN COMPLEMENTARIO BASICO", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.08, "pct_iva": 0.05}, {"id": 143107, "ramo": "SALUD", "subramo": "SALUD COLECTIVO", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.15, "pct_iva": 0.05}, {"id": 143108, "ramo": "SALUD", "subramo": "SALUD FAMILIAR GLOBAL", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.13, "pct_iva": 0.05}, {"id": 143109, "ramo": "SALUD", "subramo": "SALUD FAMILIAR CLASICA", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.13, "pct_iva": 0.05}, {"id": 143110, "ramo": "SALUD", "subramo": "SALUD FAMILIAR PLAN EVOLUCIONA", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.13, "pct_iva": 0.05}, {"id": 143111, "ramo": "VIDA GRUPO", "subramo": "VIDA GRUPO", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.2, "pct_iva": 0.0}, {"id": 143111, "ramo": "VIDA GRUPO", "subramo": "VIDA GRUPO", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.2, "pct_iva": 0.0}, {"id": 143112, "ramo": "VIDA INDIVIDUAL", "subramo": "PLAN VIVE", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 143113, "ramo": "VIDA INDIVIDUAL", "subramo": "CREDITO PROTEGIDO", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 143114, "ramo": "SALUD", "subramo": "SALUD PARA TODOS INTEGRAL", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.08, "pct_iva": 0.05}, {"id": 143115, "ramo": "SALUD", "subramo": "SALUD PARA TODOS", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.08, "pct_iva": 0.05}, {"id": 143116, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Poliza Familia", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 143117, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Trebol Particular", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.1, "pct_iva": 0.19}, {"id": 143118, "ramo": "AUTOS/VEHÍCULOS", "subramo": "Trebol Basico", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.1, "pct_iva": 0.19}, {"id": 143119, "ramo": "MULTIRIESGO", "subramo": "Copropiedades", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.175, "pct_iva": 0.19}, {"id": 143120, "ramo": "VIDA", "subramo": "Aporte ahorro FLEXI AHORRO", "aseguradora": "MAPFRE COLOMBIA VIDA SEGUROS S A", "pct_comision": 0.005, "pct_iva": 0.0}, {"id": 143138, "ramo": "VIDA", "subramo": "VIDA SURAMERICANA $0.5%", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.25, "pct_iva": 0.0}, {"id": 143249, "ramo": "VIDA INDIVIDUAL", "subramo": "VIDA DEUDORES", "aseguradora": "COMPAÑIA DE SEGUROS BOLIVAR S.A", "pct_comision": 0.4, "pct_iva": 0.0}, {"id": 151490, "ramo": "RESPONSABILIDAD CIVIL PARA PROFESIONALES MÉDICOS", "subramo": "RC PROFESIONAL", "aseguradora": "MAPFRE SEGUROS GENERALES DE COLOMBIA S A", "pct_comision": 0.125, "pct_iva": 0.19}, {"id": 161718, "ramo": "ACCIDENTES", "subramo": "SOY DEPORTISTA", "aseguradora": "SEGUROS DE VIDA SURAMERICANA S.A", "pct_comision": 0.1, "pct_iva": 0.0}];
 
 // Helpers
@@ -5869,16 +5933,104 @@ let editandoComisionId = null;
 function guardarComisionesLS() { localStorage.setItem('sekiury_comisiones', JSON.stringify(comisiones_tabla)); }
 
 function setTabComision(tab) {
-  ['tabla','resumen','aseguradora'].forEach(t => {
+  ['tabla','resumen','aseguradora','pagos'].forEach(t => {
     document.getElementById('tab-content-'+t).style.display = t===tab?'block':'none';
-    const btn = document.getElementById('tab-'+t+'-com');
-    if (btn) {
-      btn.style.borderBottomColor = t===tab?'var(--ciel)':'transparent';
-      btn.style.color = t===tab?'var(--ciel)':'var(--t3)';
+    const btn = document.getElementById('tab-'+t+'-com') || document.getElementById('tab-pagos-com');
+    const b = document.getElementById('tab-'+(t==='pagos'?'pagos':t)+'-com');
+    if (b) {
+      b.style.borderBottomColor = t===tab?'var(--ciel)':'transparent';
+      b.style.color = t===tab?'var(--ciel)':'var(--t3)';
     }
   });
   if (tab==='resumen') renderResumenAsesores();
   if (tab==='aseguradora') renderResumenAseguradoras();
+  if (tab==='pagos') renderComisionesPagos();
+}
+
+function renderComisionesPagos() {
+  // Cobros de tipo comision
+  const todos = cobros.filter(c => c.tipo === 'comision');
+  const filtroMes = document.getElementById('cp-filtro-mes')?.value || '';
+  const filtroEst = document.getElementById('cp-filtro-estado')?.value || '';
+
+  // KPIs
+  const pagados = todos.filter(c => c.estado === 'pagado');
+  const pendientes = todos.filter(c => c.estado !== 'pagado');
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const estesMes = todos.filter(c => (c.fecha_vence||c.fecha_creacion||'').startsWith(mesActual));
+
+  document.getElementById('cp-total-pagado').textContent = fmtMoneda(pagados.reduce((s,c)=>s+parseFloat(c.valor||0),0));
+  document.getElementById('cp-total-pendiente').textContent = fmtMoneda(pendientes.reduce((s,c)=>s+parseFloat(c.valor||0),0));
+  document.getElementById('cp-total-reg').textContent = todos.length;
+  document.getElementById('cp-mes-actual').textContent = fmtMoneda(estesMes.reduce((s,c)=>s+parseFloat(c.valor||0),0));
+
+  // Poblar filtro mes
+  const meses = [...new Set(todos.map(c=>(c.fecha_vence||c.fecha_creacion||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const selMes = document.getElementById('cp-filtro-mes');
+  if (selMes) {
+    const cur = selMes.value;
+    selMes.innerHTML = '<option value="">Todos los meses</option>' + meses.map(m=>`<option value="${m}">${m}</option>`).join('');
+    if (cur) selMes.value = cur;
+  }
+
+  // Filtrar
+  let filtrados = todos;
+  if (filtroMes) filtrados = filtrados.filter(c=>(c.fecha_vence||c.fecha_creacion||'').startsWith(filtroMes));
+  if (filtroEst) filtrados = filtrados.filter(c=>(filtroEst==='pagado'?c.estado==='pagado':c.estado!=='pagado'));
+  filtrados.sort((a,b)=>(b.fecha_creacion||'').localeCompare(a.fecha_creacion||''));
+
+  const lista = document.getElementById('cp-lista');
+  if (!lista) return;
+  if (!filtrados.length) {
+    lista.innerHTML = `<div class="empty-state" style="padding:50px 0;"><div class="ei">💰</div><div class="et">Sin comisiones registradas</div><div class="es">Se crean automáticamente al ingresar pólizas</div></div>`;
+    return;
+  }
+  lista.innerHTML = filtrados.map(c => {
+    const pagado = c.estado === 'pagado';
+    return `<div style="display:grid;grid-template-columns:2fr 1.5fr 1fr 1fr 100px;padding:12px 16px;border-bottom:1px solid var(--bdr2);gap:8px;align-items:center;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--t1);">${c.cliente||'—'}</div>
+        <div style="font-size:11px;color:var(--t3);">${c.concepto||''}</div>
+      </div>
+      <div style="font-size:12px;color:var(--t2);">${c.numero_poliza||''}</div>
+      <div style="font-size:11px;color:var(--t3);">${c.fecha_vence||c.fecha_creacion||'—'}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--ok);">${fmtMoneda(c.valor||0)}</div>
+      <div>
+        <span onclick="toggleEstadoComisionCobro('${c._id}')" style="cursor:pointer;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${pagado?'rgba(34,197,94,.15)':'rgba(245,158,11,.15)'};color:${pagado?'var(--ok)':'var(--warn)'};">
+          ${pagado?'✅ Pagada':'⏳ Pendiente'}
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleEstadoComisionCobro(id) {
+  const idx = cobros.findIndex(c => c._id === id);
+  if (idx < 0) return;
+  cobros[idx].estado = cobros[idx].estado === 'pagado' ? 'pendiente' : 'pagado';
+  localStorage.setItem('sekiury_cobros', JSON.stringify(cobros));
+  renderComisionesPagos();
+  showToast(cobros[idx].estado === 'pagado' ? '✅ Comisión marcada como pagada' : '⏳ Marcada como pendiente');
+}
+
+function exportarComisionesPagos() {
+  const todos = cobros.filter(c => c.tipo === 'comision');
+  if (!todos.length) { showToast('Sin comisiones para exportar', 'err'); return; }
+  const rows = todos.map(c => ({
+    'Cliente': c.cliente || '',
+    'Concepto': c.concepto || '',
+    'Póliza': c.numero_poliza || '',
+    'Valor': c.valor || 0,
+    'Fecha': c.fecha_vence || c.fecha_creacion || '',
+    'Estado': c.estado === 'pagado' ? 'Pagada' : 'Pendiente',
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = Object.keys(rows[0]).map(() => ({wch:20}));
+  XLSX.utils.book_append_sheet(wb, ws, 'Comisiones');
+  XLSX.writeFile(wb, `Sekiury_Comisiones_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('📥 Exportado ✅');
 }
 
 function calcularComisionPolizas(aseguradora, ramo, base) {
@@ -7391,7 +7543,7 @@ function setCfgTab(tab) {
 }
 
 function initConocimientoIA() {
-  ['alberny','johanna','bolivar','sura','hdi','otros'].forEach(k => {
+  ['alberny','johanna','bolivar','sura','hdi','otros','qualitas','mundial'].forEach(k => {
     const el = document.getElementById('conocimiento-' + k);
     if (el) el.value = localStorage.getItem('sekiury_conocimiento_' + k) || '';
   });
@@ -7404,7 +7556,7 @@ function initConocimientoIA() {
 }
 
 function guardarConocimientoIA() {
-  ['alberny','johanna','bolivar','sura','hdi','otros'].forEach(k => {
+  ['alberny','johanna','bolivar','sura','hdi','otros','qualitas','mundial'].forEach(k => {
     const el = document.getElementById('conocimiento-' + k);
     if (el) localStorage.setItem('sekiury_conocimiento_' + k, el.value.trim());
   });
@@ -7419,7 +7571,7 @@ function guardarConocimientoIA() {
 
 function limpiarConocimientoIA() {
   if (!confirm('¿Borrar todo el conocimiento guardado?')) return;
-  ['alberny','johanna','bolivar','sura','hdi','otros'].forEach(k => {
+  ['alberny','johanna','bolivar','sura','hdi','otros','qualitas','mundial'].forEach(k => {
     localStorage.removeItem('sekiury_conocimiento_' + k);
     localStorage.removeItem('sekiury_estilo_' + k);
   });
@@ -7432,17 +7584,21 @@ function getConocimientoIA(asesor) {
   const key = (asesor||'').toLowerCase().includes('johanna') ? 'johanna' : 'alberny';
   const conocAsesor = localStorage.getItem('sekiury_conocimiento_' + key) || '';
   const estiloAsesor = localStorage.getItem('sekiury_estilo_' + key) || '';
-  const bolivar = localStorage.getItem('sekiury_conocimiento_bolivar') || '';
-  const sura    = localStorage.getItem('sekiury_conocimiento_sura') || '';
-  const hdi     = localStorage.getItem('sekiury_conocimiento_hdi') || '';
-  const otros   = localStorage.getItem('sekiury_conocimiento_otros') || '';
+  const bolivar   = localStorage.getItem('sekiury_conocimiento_bolivar') || '';
+  const sura      = localStorage.getItem('sekiury_conocimiento_sura') || '';
+  const hdi       = localStorage.getItem('sekiury_conocimiento_hdi') || '';
+  const otros     = localStorage.getItem('sekiury_conocimiento_otros') || '';
+  const qualitas  = localStorage.getItem('sekiury_conocimiento_qualitas') || '';
+  const mundial   = localStorage.getItem('sekiury_conocimiento_mundial') || '';
   let ctx = '';
   if (conocAsesor)  ctx += `\n📚 CONOCIMIENTO DE ${asesor.split(' ')[0].toUpperCase()}:\n${conocAsesor}`;
   if (estiloAsesor) ctx += `\n🤝 ESTILO DE ${asesor.split(' ')[0].toUpperCase()}:\n${estiloAsesor}`;
-  if (bolivar) ctx += `\n🛡️ BOLÍVAR: ${bolivar}`;
-  if (sura)    ctx += `\n⭐ SURA: ${sura}`;
-  if (hdi)     ctx += `\n🔵 HDI: ${hdi}`;
-  if (otros)   ctx += `\n🗺️ OTRAS ASEGURADORAS: ${otros}`;
+  if (bolivar)  ctx += `\n🛡️ BOLÍVAR: ${bolivar}`;
+  if (sura)     ctx += `\n⭐ SURA: ${sura}`;
+  if (hdi)      ctx += `\n🔵 HDI: ${hdi}`;
+  if (otros)    ctx += `\n🗺️ OTRAS ASEGURADORAS: ${otros}`;
+  if (qualitas) ctx += `\n🚗 QUALITAS: ${qualitas}`;
+  if (mundial)  ctx += `\n🌍 MUNDIAL: ${mundial}`;
   return ctx ? `\n\n═══ CONOCIMIENTO INTERNO SEKIURY (usa esto para respuestas específicas, NO genéricas) ═══${ctx}\n═══════════════════════════════════════════════════════` : '';
 }
 
