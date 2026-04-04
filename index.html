@@ -1310,7 +1310,8 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
         <option value="ganado">Ganado</option>
         <option value="perdido">Perdido</option>
       </select>
-      <button class="btn btn-outline" onclick="exportarCasosLegal()" style="margin-left:auto;" title="Exportar todos los casos a Excel">📥 Exportar Excel</button>
+      <button class="btn btn-success" onclick="abrirImportCasosLegal()" style="margin-left:auto;" title="Importar casos desde Excel">📤 Importar Casos</button>
+      <button class="btn btn-outline" onclick="exportarCasosLegal()" title="Exportar todos los casos a Excel">📥 Exportar Excel</button>
     </div>
     <div class="table-wrap">
       <div class="table-top-line"></div>
@@ -3199,27 +3200,56 @@ function guardarLS() { localStorage.setItem('sekiury_clientes', JSON.stringify(c
 
 // Elimina clientes duplicados por número de documento (conserva el más completo)
 function limpiarClientesDuplicados() {
-  const vistos = {};
-  const limpios = [];
+  // PASO 1: Eliminar duplicados exactos por cédula
+  const vistosDocs = {};
+  let limpios = [];
   clientes.forEach(c => {
     const doc = (c.numero_documento||'').trim();
     if (!doc) { limpios.push(c); return; }
-    if (!vistos[doc]) {
-      vistos[doc] = true;
+    if (!vistosDocs[doc]) {
+      vistosDocs[doc] = true;
       limpios.push(c);
     } else {
-      // Si el duplicado es un prospecto generado automáticamente, lo descartamos
-      if (c._id && c._id.startsWith('cli_ben_')) return;
-      // Si el existente era el auto-generado, reemplazarlo
-      const idx = limpios.findIndex(x => x.numero_documento === doc && x._id && x._id.startsWith('cli_ben_'));
-      if (idx >= 0) limpios[idx] = c;
+      // Conservar el más completo (activo > prospecto > inactivo, y el auto-generado pierde)
+      if (c._id && (c._id.startsWith('cli_ben_') || c._id.startsWith('cli_ac_'))) return;
+      const idx = limpios.findIndex(x => x.numero_documento === doc);
+      if (idx >= 0) {
+        const existente = limpios[idx];
+        const prioExist = existente.estado==='activo'?3:existente.estado==='prospecto'?2:1;
+        const prioCand  = c.estado==='activo'?3:c.estado==='prospecto'?2:1;
+        if (prioCand > prioExist) limpios[idx] = c;
+      }
     }
   });
-  if (limpios.length < clientes.length) {
-    const eliminados = clientes.length - limpios.length;
+
+  // PASO 2: Detectar duplicados por nombre similar (diferente cédula)
+  const normalizar = str => (str||'').toLowerCase().trim().replace(/\s+/g,' ');
+  const porNombre = {};
+  const limpios2 = [];
+  limpios.forEach(c => {
+    const nom = normalizar((c.nombre||'') + ' ' + (c.apellidos||''));
+    if (nom.length < 5) { limpios2.push(c); return; }
+    if (!porNombre[nom]) {
+      porNombre[nom] = limpios2.length;
+      limpios2.push(c);
+    } else {
+      // Hay otro con el mismo nombre — conservar el activo con más datos
+      const idx = porNombre[nom];
+      const existente = limpios2[idx];
+      const prioExist = existente.estado==='activo'?3:existente.estado==='prospecto'?2:1;
+      const prioCand  = c.estado==='activo'?3:c.estado==='prospecto'?2:1;
+      if (prioCand > prioExist || (prioCand === prioExist && Object.values(c).filter(Boolean).length > Object.values(existente).filter(Boolean).length)) {
+        limpios2[idx] = c;
+      }
+    }
+  });
+
+  const eliminados = clientes.length - limpios2.length;
+  if (eliminados > 0) {
     clientes.length = 0;
-    limpios.forEach(c => clientes.push(c));
+    limpios2.forEach(c => clientes.push(c));
     guardarLS();
+    actualizarStats();
     showToast(`🧹 ${eliminados} duplicado(s) eliminado(s)`);
   } else {
     showToast('✅ Sin duplicados encontrados');
@@ -8092,6 +8122,138 @@ function setLegalTab(tab) {
 }
 
 // ── KPIs ──────────────────────────────────────────────────────────────────
+// ── IMPORTAR CASOS LEGALES ────────────────────────────────────────────────────
+function abrirImportCasosLegal() {
+  document.getElementById('casos-legal-import-preview').innerHTML = '';
+  document.getElementById('btn-confirmar-import-casos').style.display = 'none';
+  document.getElementById('casos-legal-file-input').value = '';
+  abrirModal('modal-import-casos-legal');
+}
+
+function handleCasosLegalDrop(e) {
+  e.preventDefault();
+  document.getElementById('casos-legal-import-zone').style.borderColor = '';
+  const file = e.dataTransfer.files[0];
+  if (file) handleCasosLegalFile(file);
+}
+
+function handleCasosLegalFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) { showToast('El archivo está vacío', 'err'); return; }
+
+      const mapear = (row, posibles) => {
+        for (const k of posibles) {
+          const found = Object.keys(row).find(rk => rk.toLowerCase().replace(/\s+/g,'').includes(k.toLowerCase().replace(/\s+/g,'')));
+          if (found !== undefined && row[found] !== '') return String(row[found]).trim();
+        }
+        return '';
+      };
+
+      const clientesLegales = getLegalClientes();
+      const casosExistentes = getLegalCasos();
+      let importados = 0;
+      let sinCliente = 0;
+      const nuevosCasos = [];
+
+      rows.forEach(row => {
+        const nombreCli = mapear(row, ['nombre cliente','nombre del cliente','cliente','nombre']);
+        const docCli = mapear(row, ['documento','cedula','cc','nit','documento cliente']);
+        const tipo = mapear(row, ['tipo','tipo de caso','tipo caso']);
+        const estado = mapear(row, ['estado']) || 'activo';
+
+        if (!nombreCli && !docCli) return;
+
+        // Buscar cliente legal existente o crear
+        let cli = clientesLegales.find(c =>
+          (docCli && c.documento === docCli) ||
+          (nombreCli && c.nombre.toLowerCase().includes(nombreCli.toLowerCase().substring(0,8)))
+        );
+
+        if (!cli) {
+          // Crear cliente legal automáticamente
+          cli = {
+            _id: 'lcli_imp_' + genId(),
+            nombre: nombreCli,
+            documento: docCli,
+            tipo_doc: 'CC',
+            celular: mapear(row, ['celular','telefono','tel']),
+            email: mapear(row, ['email','correo']),
+            ciudad: mapear(row, ['ciudad']),
+            ocupacion: mapear(row, ['ocupacion']),
+            obs: '',
+            fecha_creacion: new Date().toISOString().slice(0,10),
+          };
+          clientesLegales.push(cli);
+        }
+
+        const nuevoCaso = {
+          _id: 'caso_imp_' + genId(),
+          cliente_id: cli._id,
+          nombre_caso: mapear(row, ['nombre caso','caso','nombre del caso']) || `${tipo||'Caso'} de ${cli.nombre}`,
+          tipo: tipo || 'Civil',
+          estado: estado,
+          radicado: mapear(row, ['radicado','numero radicado','radicacion']),
+          juzgado: mapear(row, ['juzgado','entidad','despacho']),
+          fecha_apertura: mapear(row, ['fecha apertura','fecha inicio','apertura']),
+          prox_audiencia: mapear(row, ['audiencia','proxima audiencia','prox audiencia']),
+          honorarios: parseFloat(mapear(row, ['honorarios'])) || 0,
+          anticipo: parseFloat(mapear(row, ['anticipo'])) || 0,
+          descripcion: mapear(row, ['descripcion','descripción','detalle']),
+          obs: mapear(row, ['observaciones','obs','notas']),
+          causante: mapear(row, ['causante']),
+          causante_cc: mapear(row, ['cc causante','cedula causante']),
+          conyuge_nombre: mapear(row, ['conyuge','nombre conyuge']),
+          conyuge_cc: mapear(row, ['cc conyuge','cedula conyuge']),
+          herederos: [],
+          terceros: [],
+          bitacora: [],
+          fecha_creacion: new Date().toISOString().slice(0,10),
+        };
+        nuevosCasos.push(nuevoCaso);
+        importados++;
+      });
+
+      // Guardar clientes actualizados
+      localStorage.setItem(LEGAL_CLIENTES_KEY, JSON.stringify(clientesLegales));
+
+      // Preview
+      const preview = document.getElementById('casos-legal-import-preview');
+      preview.innerHTML = `
+        <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:14px;margin-top:12px;">
+          <div style="font-size:13px;font-weight:700;color:var(--ok);">✅ ${importados} caso(s) listos para importar</div>
+          ${nuevosCasos[0] ? `<div style="font-size:11px;color:var(--t3);margin-top:4px;">Primer caso: <strong>${nuevosCasos[0].nombre_caso}</strong> · ${nuevosCasos[0].tipo} · ${nuevosCasos[0].estado}</div>` : ''}
+        </div>`;
+
+      // Guardar temporalmente para confirmar
+      window._casosLegalPendientes = nuevosCasos;
+      document.getElementById('btn-confirmar-import-casos').style.display = 'inline-block';
+
+    } catch(err) {
+      showToast('Error al leer el archivo: ' + err.message, 'err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function confirmarImportCasosLegal() {
+  const nuevos = window._casosLegalPendientes || [];
+  if (!nuevos.length) return;
+  const existentes = getLegalCasos();
+  const todos = [...existentes, ...nuevos];
+  localStorage.setItem(LEGAL_CASOS_KEY, JSON.stringify(todos));
+  cerrarModal('modal-import-casos-legal');
+  filtrarCasos();
+  renderLegalKpis();
+  showToast(`✅ ${nuevos.length} caso(s) importado(s) correctamente`);
+  window._casosLegalPendientes = [];
+}
+
 function exportarCasosLegal() {
   const casos = getLegalCasos();
   const clientes = getLegalClientes();
@@ -9381,6 +9543,40 @@ actualizarDashboard();
 
 <!-- MOBILE BOTTOM NAV -->
 <div class="mn-overlay" id="mn-overlay" onclick="cerrarMnMore()"></div>
+
+<!-- Modal Import Casos Legales -->
+<div class="modal-overlay" id="modal-import-casos-legal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <h2>📤 Importar Casos Legales</h2>
+      <button class="modal-close" onclick="cerrarModal('modal-import-casos-legal')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:24px;">
+      <div style="background:rgba(104,215,255,.08);border:1px solid rgba(104,215,255,.2);border-radius:10px;padding:14px;margin-bottom:16px;font-size:12px;color:var(--t2);line-height:1.8;">
+        <strong style="color:var(--ciel);">Columnas esperadas en el Excel:</strong><br>
+        <span style="color:var(--t3);">Obligatorias:</span> <strong>Nombre Cliente · Documento Cliente · Tipo de Caso · Estado</strong><br>
+        <span style="color:var(--t3);">Opcionales:</span> Radicado · Juzgado · Fecha Apertura · Próxima Audiencia · Honorarios · Anticipo · Descripción · Causante · CC Causante · Nombre Cónyuge · CC Cónyuge
+      </div>
+      <div class="import-zone" id="casos-legal-import-zone"
+        onclick="document.getElementById('casos-legal-file-input').click()"
+        ondragover="event.preventDefault();this.style.borderColor='var(--ciel)'"
+        ondragleave="this.style.borderColor=''"
+        ondrop="handleCasosLegalDrop(event)"
+        style="border:2px dashed var(--bdr);border-radius:12px;padding:32px;text-align:center;cursor:pointer;">
+        <div style="font-size:36px;margin-bottom:8px;">📁</div>
+        <div style="font-size:14px;font-weight:700;color:var(--t1);margin-bottom:4px;">Arrastra tu Excel aquí o haz clic</div>
+        <div style="font-size:12px;color:var(--t3);">Formato .xlsx o .xls</div>
+      </div>
+      <input type="file" id="casos-legal-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleCasosLegalFile(this.files[0])">
+      <div id="casos-legal-import-preview" style="margin-top:16px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-import-casos-legal')">Cancelar</button>
+      <button class="btn btn-success" id="btn-confirmar-import-casos" style="display:none" onclick="confirmarImportCasosLegal()">✅ Importar Casos</button>
+    </div>
+  </div>
+</div>
+
 <div class="mn-more-panel" id="mn-more-panel">
   <div class="mn-more-item" onclick="mnNavTo('tareas')"><span class="mn-ic">✅</span><span class="mn-lb">Tareas</span></div>
   <div class="mn-more-item" onclick="mnNavTo('siniestros')"><span class="mn-ic">⚠️</span><span class="mn-lb">Siniestros</span></div>
