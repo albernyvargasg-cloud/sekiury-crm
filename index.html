@@ -1731,9 +1731,28 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     </div>
     <div class="modal-body" style="padding:24px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-        <div class="form-group" style="grid-column:1/-1"><label>Nombre Completo</label><input id="ac-nombre" placeholder="Nombre del cliente"></div>
-        <div class="form-group"><label>DNI / Cédula</label><input id="ac-documento" placeholder="Número de documento"></div>
-        <div class="form-group"><label>Nacionalidad</label>
+
+        <!-- TIPO DE CLIENTE -->
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Tipo de Cliente</label>
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 16px;border:1px solid var(--bdr);border-radius:8px;flex:1;justify-content:center;font-size:13px;font-weight:700;" id="ac-tipo-natural-label">
+              <input type="radio" name="ac-tipo-cliente" id="ac-tipo-natural" value="natural" checked onchange="acToggleTipo()" style="cursor:pointer;">
+              👤 Persona Natural
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 16px;border:1px solid var(--bdr);border-radius:8px;flex:1;justify-content:center;font-size:13px;font-weight:700;" id="ac-tipo-juridico-label">
+              <input type="radio" name="ac-tipo-cliente" id="ac-tipo-juridico" value="juridico" onchange="acToggleTipo()" style="cursor:pointer;">
+              🏢 Persona Jurídica
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="grid-column:1/-1"><label id="ac-label-nombre">Nombre Completo</label><input id="ac-nombre" placeholder="Nombre del cliente"></div>
+        <div class="form-group"><label id="ac-label-doc">DNI / Cédula</label><input id="ac-documento" placeholder="Número de documento"></div>
+        <!-- Campo N° Asegurados solo para jurídico -->
+        <div class="form-group" id="ac-group-asegurados" style="display:none;"><label>N° de Asegurados</label><input type="number" id="ac-asegurados" placeholder="Ej: 25" min="1"></div>
+        <div class="form-group" id="ac-group-nacimiento"><label>Fecha de Nacimiento</label><input type="date" id="ac-nacimiento"></div>
+        <div class="form-group"><label>Nacionalidad / País</label>
           <input id="ac-nacionalidad" list="ac-nac-list" placeholder="Seleccionar o escribir...">
           <datalist id="ac-nac-list">
             <option value="Argentina"><option value="Bolivia"><option value="Brasil">
@@ -1759,7 +1778,6 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
             <option value="Nueva Zelanda"><option value="Singapur"><option value="Filipinas">
           </datalist>
         </div>
-        <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="ac-nacimiento"></div>
         <div class="form-group" style="grid-column:1/-1"><label>Email</label><input type="email" id="ac-email" placeholder="correo@ejemplo.com"></div>
         <div class="form-group"><label># Voucher</label><input id="ac-voucher" placeholder="Número de voucher"></div>
         <div class="form-group"><label>Plan</label><input id="ac-plan" placeholder="Ej: Classic, Gold, Platinum..."></div>
@@ -9821,6 +9839,14 @@ function editarAssist(id) {
   document.getElementById('ac-valor').value = a.valor_seguro || '';
   document.getElementById('ac-pct-comision').value = a.pct_comision || 40;
   document.getElementById('ac-comision-estado').value = a.comision_estado || 'pendiente';
+  document.getElementById('ac-asegurados').value = a.num_asegurados || '';
+  // Tipo cliente
+  const esJuridico = a.tipo_cliente === 'juridico';
+  const radioJur = document.getElementById('ac-tipo-juridico');
+  const radioNat = document.getElementById('ac-tipo-natural');
+  if (esJuridico && radioJur) { radioJur.checked = true; }
+  else if (radioNat) { radioNat.checked = true; }
+  acToggleTipo();
   calcularComisionAssist();
   abrirModal('modal-nuevo-assist');
 }
@@ -9837,6 +9863,30 @@ function eliminarAssist(id) {
 function abrirImportAssist() {
   document.getElementById('assist-import-preview').innerHTML = '';
   abrirModal('modal-import-assist');
+}
+
+function acToggleTipo() {
+  const juridico = document.getElementById('ac-tipo-juridico')?.checked;
+  // Labels
+  const labelNom = document.getElementById('ac-label-nombre');
+  const labelDoc = document.getElementById('ac-label-doc');
+  if (labelNom) labelNom.textContent = juridico ? 'Razón Social' : 'Nombre Completo';
+  if (labelDoc) labelDoc.textContent = juridico ? 'NIT / RUC' : 'DNI / Cédula';
+  // Mostrar/ocultar campos
+  const grpNac = document.getElementById('ac-group-nacimiento');
+  const grpAseg = document.getElementById('ac-group-asegurados');
+  if (grpNac) grpNac.style.display = juridico ? 'none' : '';
+  if (grpAseg) grpAseg.style.display = juridico ? '' : 'none';
+  // Placeholder nombre
+  const inputNom = document.getElementById('ac-nombre');
+  if (inputNom) inputNom.placeholder = juridico ? 'Razón social de la entidad' : 'Nombre del cliente';
+  const inputDoc = document.getElementById('ac-documento');
+  if (inputDoc) inputDoc.placeholder = juridico ? 'NIT o RUC' : 'Número de documento';
+  // Highlight seleccionado
+  document.getElementById('ac-tipo-natural-label').style.borderColor = juridico ? 'var(--bdr)' : 'var(--ciel)';
+  document.getElementById('ac-tipo-juridico-label').style.borderColor = juridico ? 'var(--ciel)' : 'var(--bdr)';
+  document.getElementById('ac-tipo-natural-label').style.color = juridico ? 'var(--t3)' : 'var(--ciel)';
+  document.getElementById('ac-tipo-juridico-label').style.color = juridico ? 'var(--ciel)' : 'var(--t3)';
 }
 
 function calcularComisionAssist() {
@@ -9862,6 +9912,10 @@ function abrirNuevoAssist() {
   document.getElementById('ac-pct-comision').value = '40';
   document.getElementById('ac-comision-calc').textContent = 'USD $0.00';
   document.getElementById('ac-comision-estado').value = 'pendiente';
+  document.getElementById('ac-asegurados').value = '';
+  // Reset tipo a Natural
+  const radioNat = document.getElementById('ac-tipo-natural');
+  if (radioNat) { radioNat.checked = true; acToggleTipo(); }
   abrirModal('modal-nuevo-assist');
 }
 
@@ -9874,12 +9928,15 @@ function guardarNuevoAssist() {
   const pct = parseFloat(document.getElementById('ac-pct-comision').value) || 40;
   const nacionalidad = document.getElementById('ac-nacionalidad').value.trim();
   const documento = document.getElementById('ac-documento').value.trim();
+  const tipoCliente = document.getElementById('ac-tipo-juridico')?.checked ? 'juridico' : 'natural';
 
   const data = {
     nombre,
     documento,
+    tipo_cliente: tipoCliente,
+    num_asegurados: tipoCliente === 'juridico' ? (parseInt(document.getElementById('ac-asegurados').value) || 1) : 1,
     nacionalidad,
-    fecha_nacimiento: document.getElementById('ac-nacimiento').value,
+    fecha_nacimiento: tipoCliente === 'natural' ? document.getElementById('ac-nacimiento').value : '',
     email: document.getElementById('ac-email').value.trim(),
     voucher,
     plan: document.getElementById('ac-plan').value.trim(),
