@@ -1779,7 +1779,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
           </datalist>
         </div>
         <div class="form-group" style="grid-column:1/-1"><label>Email</label><input type="email" id="ac-email" placeholder="correo@ejemplo.com"></div>
-        <div class="form-group"><label># Voucher</label><input id="ac-voucher" placeholder="Número de voucher"></div>
+        <div class="form-group"><label id="ac-label-voucher"># Voucher / Factura</label><input id="ac-voucher" placeholder="Número de voucher o factura"></div>
         <div class="form-group"><label>Plan</label><input id="ac-plan" placeholder="Ej: Classic, Gold, Platinum..."></div>
         <div class="form-group"><label>Vigencia Desde</label><input type="date" id="ac-desde"></div>
         <div class="form-group"><label>Vigencia Hasta</label><input type="date" id="ac-hasta"></div>
@@ -9880,8 +9880,10 @@ function acToggleTipo() {
   // Placeholder nombre
   const inputNom = document.getElementById('ac-nombre');
   if (inputNom) inputNom.placeholder = juridico ? 'Razón social de la entidad' : 'Nombre del cliente';
-  const inputDoc = document.getElementById('ac-documento');
-  if (inputDoc) inputDoc.placeholder = juridico ? 'NIT o RUC' : 'Número de documento';
+  const labelVou = document.getElementById('ac-label-voucher');
+  if (labelVou) labelVou.textContent = juridico ? '# Factura' : '# Voucher';
+  const inputVou = document.getElementById('ac-voucher');
+  if (inputVou) inputVou.placeholder = juridico ? 'Número de factura' : 'Número de voucher';
   // Highlight seleccionado
   document.getElementById('ac-tipo-natural-label').style.borderColor = juridico ? 'var(--bdr)' : 'var(--ciel)';
   document.getElementById('ac-tipo-juridico-label').style.borderColor = juridico ? 'var(--ciel)' : 'var(--bdr)';
@@ -9959,28 +9961,30 @@ function guardarNuevoAssist() {
     showToast('✅ Voucher registrado');
   }
 
-  // ── AUTO-REGISTRO COMO PROSPECTO (solo colombianos) ───────────────────
-  const esColombiano = nacionalidad.toLowerCase().includes('colomb');
-  if (esColombiano && documento) {
+  // ── AUTO-REGISTRO COMO PROSPECTO (todos los clientes Assist Card) ──────
+  if (documento) {
     const existe = clientes.find(c => c.numero_documento === documento);
     if (!existe) {
+      const tipoDoc = data.tipo_cliente === 'juridico' ? 'NIT' : 'CC';
+      const tipoPer = data.tipo_cliente === 'juridico' ? 'juridica' : 'natural';
       const nombreParts = nombre.trim().split(' ');
       const mitad = Math.ceil(nombreParts.length / 2);
       const nuevoCliente = {
         _id: 'cli_ac_' + genId(),
-        tipo_persona: 'natural',
-        tipo_documento: 'CC',
+        tipo_persona: tipoPer,
+        tipo_documento: tipoDoc,
         numero_documento: documento,
-        nombre: nombreParts.slice(0, mitad).join(' '),
-        apellidos: nombreParts.slice(mitad).join(' '),
+        nombre: data.tipo_cliente === 'juridico' ? nombre : nombreParts.slice(0, mitad).join(' '),
+        apellidos: data.tipo_cliente === 'juridico' ? '' : nombreParts.slice(mitad).join(' '),
         fecha_nacimiento: data.fecha_nacimiento || '',
         email: data.email || '',
+        ciudad: '',
         estado: 'prospecto',
-        observaciones: `Cliente Assist Card · Voucher ${voucher} · Oportunidad cross-sell`,
+        observaciones: `Cliente Assist Card · ${data.tipo_cliente === 'juridico' ? 'Factura' : 'Voucher'} ${voucher} · ${nacionalidad} · Cross-sell`,
       };
       clientes.push(nuevoCliente);
       guardarLS();
-      setTimeout(() => showToast('🇨🇴 Registrado como prospecto en Clientes Sekiury'), 500);
+      setTimeout(() => showToast(`🌎 ${nombre} registrado como prospecto en Clientes`), 500);
     }
   }
 
