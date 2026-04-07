@@ -1656,6 +1656,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div style="display:flex;gap:10px;">
       <button class="btn btn-outline" onclick="exportarAssist()">📥 Exportar Excel</button>
       <button class="btn btn-outline" onclick="abrirImportAssist()">📤 Importar Excel</button>
+      <button class="btn btn-outline" onclick="sincronizarComisionesAssist()" title="Sincronizar comisiones con módulo Comisiones">🔄 Sincronizar</button>
       <button class="btn btn-primary" onclick="abrirNuevoAssist()">＋ Nuevo Voucher</button>
     </div>
   </div>
@@ -5799,35 +5800,40 @@ function guardarPoliza() {
     if (data.comision && parseFloat(data.comision) > 0) {
       const comision = parseFloat(data.comision);
       const cliente = `${data.nombres_cliente||''} ${data.apellidos_cliente||''}`.trim();
-      setTimeout(() => {
-        const confirmar = confirm(
-          `💰 COMISIÓN PENDIENTE\n\n` +
-          `Póliza: ${data.numero_poliza}\n` +
-          `Cliente: ${cliente}\n` +
-          `Aseguradora: ${data.aseguradora||''}\n` +
-          `Comisión: $${comision.toLocaleString('es-CO')}\n\n` +
-          `¿Deseas registrar este cobro de comisión como pendiente?`
-        );
-        if (confirmar) {
-          // Crear cobro de comisión automático
-          const cobros = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
-          cobros.push({
-            _id: 'cob_' + genId(),
-            poliza_id: data._id,
-            numero_poliza: data.numero_poliza,
-            cliente: cliente,
-            cedula_cliente: data.cedula_cliente || '',
-            concepto: `Comisión póliza ${data.numero_poliza} - ${data.aseguradora||''}`,
-            valor: comision,
-            fecha_vence: data.fecha_inicio || new Date().toISOString().slice(0,10),
-            estado: 'pendiente',
-            tipo: 'comision',
-            fecha_creacion: new Date().toISOString().slice(0,10),
-          });
-          localStorage.setItem('sekiury_cobros', JSON.stringify(cobros));
-          showToast('💰 Comisión registrada en Cobros ✅');
-        }
-      }, 400);
+      const cobrosExist = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
+      const yaExisteComision = cobrosExist.some(c => c.tipo === 'comision' && c.numero_poliza === data.numero_poliza);
+      if (!yaExisteComision) {
+        setTimeout(() => {
+          const confirmar = confirm(
+            '💰 COMISIÓN PENDIENTE\n\n' +
+            'Póliza: ' + data.numero_poliza + '\n' +
+            'Cliente: ' + cliente + '\n' +
+            'Aseguradora: ' + (data.aseguradora||'') + '\n' +
+            'Comisión: $' + comision.toLocaleString('es-CO') + '\n\n' +
+            '¿Deseas registrar este cobro de comisión como pendiente?'
+          );
+          if (confirmar) {
+            const cobros = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
+            if (!cobros.some(c => c.tipo === 'comision' && c.numero_poliza === data.numero_poliza)) {
+              cobros.push({
+                _id: 'cob_' + genId(),
+                poliza_id: data._id,
+                numero_poliza: data.numero_poliza,
+                cliente: cliente,
+                cedula_cliente: data.cedula_cliente || '',
+                concepto: 'Comisión póliza ' + data.numero_poliza + ' - ' + (data.aseguradora||''),
+                valor: comision,
+                fecha_vence: data.fecha_inicio || new Date().toISOString().slice(0,10),
+                estado: 'pendiente',
+                tipo: 'comision',
+                fecha_creacion: new Date().toISOString().slice(0,10),
+              });
+              localStorage.setItem('sekiury_cobros', JSON.stringify(cobros));
+              showToast('💰 Comisión registrada en Cobros ✅');
+            }
+          }
+        }, 400);
+      }
     }
   guardarPolizasLS();
   filtradas_p = [...polizas];
@@ -6007,7 +6013,7 @@ function setTabComision(tab) {
 
 function renderComisionesPagos() {
   // Cobros de tipo comision
-  const todos = cobros.filter(c => c.tipo === 'comision');
+  const todos = cobros.filter(c => c.tipo === 'comision' || c.tipo === 'comision_ac');
   const filtroMes = document.getElementById('cp-filtro-mes')?.value || '';
   const filtroEst = document.getElementById('cp-filtro-estado')?.value || '';
 
@@ -9989,6 +9995,37 @@ function guardarNuevoAssist() {
   }
 
   guardarAssist();
+
+  // ── REGISTRAR COMISIÓN EN MÓDULO COBROS ───────────────────────────────
+  if (data.valor_comision > 0) {
+    const cobrosAll = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
+    const yaExisteAC = cobrosAll.some(c => c.tipo === 'comision_ac' && c.numero_poliza === voucher);
+    if (!yaExisteAC) {
+      cobrosAll.push({
+        _id: 'cob_ac_' + genId(),
+        numero_poliza: voucher,
+        cliente: nombre,
+        cedula_cliente: documento,
+        concepto: 'Comisión Assist Card · ' + (data.tipo_cliente === 'juridico' ? 'Factura' : 'Voucher') + ' ' + voucher + ' · ' + nacionalidad,
+        valor: data.valor_comision,
+        fecha_vence: data.vigencia_desde || new Date().toISOString().slice(0,10),
+        estado: data.comision_estado === 'pagado' ? 'pagado' : 'pendiente',
+        tipo: 'comision_ac',
+        aseguradora: 'ASSIST CARD DE COLOMBIA S.A.S',
+        fecha_creacion: new Date().toISOString().slice(0,10),
+      });
+      localStorage.setItem('sekiury_cobros', JSON.stringify(cobrosAll));
+    } else {
+      // Si ya existe, actualizar el estado de pago
+      const idx = cobrosAll.findIndex(c => c.tipo === 'comision_ac' && c.numero_poliza === voucher);
+      if (idx >= 0) {
+        cobrosAll[idx].estado = data.comision_estado === 'pagado' ? 'pagado' : 'pendiente';
+        cobrosAll[idx].valor = data.valor_comision;
+        localStorage.setItem('sekiury_cobros', JSON.stringify(cobrosAll));
+      }
+    }
+  }
+
   poblarFiltroNacAssist();
   actualizarKpisAssist();
   filtrarAssist();
@@ -10068,6 +10105,40 @@ function importAssistAgregar(nuevos) {
   filtrarAssist();
   cerrarModal('modal-import-assist');
   showToast(`✅ ${sinDup.length} nuevos vouchers agregados (${nuevos.length - sinDup.length} duplicados omitidos)`);
+}
+
+function sincronizarComisionesAssist() {
+  const cobrosAll = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
+  let nuevas = 0;
+  let actualizadas = 0;
+
+  acDatos.forEach(a => {
+    if (!a.valor_comision || a.valor_comision <= 0) return;
+    const existe = cobrosAll.findIndex(c => c.tipo === 'comision_ac' && c.numero_poliza === a.voucher);
+    if (existe < 0) {
+      cobrosAll.push({
+        _id: 'cob_ac_' + genId(),
+        numero_poliza: a.voucher,
+        cliente: a.nombre,
+        cedula_cliente: a.documento || '',
+        concepto: 'Comisión Assist Card · ' + (a.tipo_cliente === 'juridico' ? 'Factura' : 'Voucher') + ' ' + a.voucher + ' · ' + (a.nacionalidad||''),
+        valor: a.valor_comision,
+        fecha_vence: a.vigencia_desde || a.fecha_import || new Date().toISOString().slice(0,10),
+        estado: a.comision_estado === 'pagado' ? 'pagado' : 'pendiente',
+        tipo: 'comision_ac',
+        aseguradora: 'ASSIST CARD DE COLOMBIA S.A.S',
+        fecha_creacion: a.fecha_import || new Date().toISOString().slice(0,10),
+      });
+      nuevas++;
+    } else {
+      cobrosAll[existe].estado = a.comision_estado === 'pagado' ? 'pagado' : 'pendiente';
+      cobrosAll[existe].valor = a.valor_comision;
+      actualizadas++;
+    }
+  });
+
+  localStorage.setItem('sekiury_cobros', JSON.stringify(cobrosAll));
+  showToast(`🔄 ${nuevas} nueva(s) · ${actualizadas} actualizada(s) en Comisiones`);
 }
 
 function exportarAssist() {
