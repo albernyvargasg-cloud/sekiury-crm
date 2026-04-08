@@ -3331,7 +3331,14 @@ function actualizarDashboard() {
 function actualizarCardsDashboard(clientesActivos, polizasVigentes, cobrosPendientes, tareasVencidas) {
   const el = document.getElementById('db-resumen');
   if (!el) return;
-  const polizasRenovar = polizas.filter(p=>p.estado==='por renovar').length;
+  const hoyDb = new Date(); hoyDb.setHours(0,0,0,0);
+  const en30 = new Date(hoyDb); en30.setDate(en30.getDate()+30);
+  const polizasRenovar = polizas.filter(p=>{
+    if (p.estado==='por renovar') return true;
+    if (p.estado!=='vigente' || !p.fecha_fin) return false;
+    const ff = new Date(p.fecha_fin); ff.setHours(0,0,0,0);
+    return ff >= hoyDb && ff <= en30;
+  }).length;
   const polizasVencidas = polizas.filter(p=>p.estado==='vencida'||p.estado==='cancelada').length;
   const saldoTotal = cobros.reduce((s,c)=>s+(parseFloat(String(c.saldo_oficina||0).replace(/[^0-9.-]/g,''))||0),0);
   const comisionTotal = cobros.reduce((s,c)=>s+(parseFloat(String(c.comision_recibir||0).replace(/[^0-9.-]/g,''))||0),0);
@@ -3378,7 +3385,14 @@ function actualizarCardsDashboard(clientesActivos, polizasVigentes, cobrosPendie
           <span style="font-size:11px;color:var(--ciel);cursor:pointer;font-weight:700;" onclick="navTo('polizas',null);document.getElementById('filtro-estado-poliza').value='por renovar';filtrarPolizas();">Ver todas →</span>
         </div>
         <div style="padding:0 18px;">
-          ${polizas.filter(p=>p.estado==='por renovar').slice(0,5).map((p,i,arr)=>`
+          ${polizas.filter(p=>{
+            if (p.estado==='por renovar') return true;
+            if (p.estado!=='vigente' || !p.fecha_fin) return false;
+            const hoyF=new Date(); hoyF.setHours(0,0,0,0);
+            const en30F=new Date(hoyF); en30F.setDate(en30F.getDate()+30);
+            const ff=new Date(p.fecha_fin); ff.setHours(0,0,0,0);
+            return ff>=hoyF && ff<=en30F;
+          }).sort((a,b)=>new Date(a.fecha_fin)-new Date(b.fecha_fin)).slice(0,5).map((p,i,arr)=>`
           <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:${i<arr.length-1?'1px solid var(--bdr2)':'none'};">
             <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#2F4D8A,#68D7FF);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#fff;flex-shrink:0;">
               ${(p.nombres_cliente||'?')[0]}${(p.apellidos_cliente||'')[0]||''}
@@ -5150,7 +5164,14 @@ function fmtFecha(v) {
 function actualizarStatsPolizas() {
   const total = polizas.length;
   const vigentes = polizas.filter(p=>p.estado==='vigente').length;
-  const renovar = polizas.filter(p=>p.estado==='por renovar').length;
+  const hoyPs = new Date(); hoyPs.setHours(0,0,0,0);
+  const en30Ps = new Date(hoyPs); en30Ps.setDate(en30Ps.getDate()+30);
+  const renovar = polizas.filter(p=>{
+    if (p.estado==='por renovar') return true;
+    if (p.estado!=='vigente' || !p.fecha_fin) return false;
+    const ff = new Date(p.fecha_fin); ff.setHours(0,0,0,0);
+    return ff >= hoyPs && ff <= en30Ps;
+  }).length;
   const vencidas = polizas.filter(p=>p.estado==='vencida'||p.estado==='cancelada').length;
   document.getElementById('pst-total').textContent = total;
   document.getElementById('pst-vigentes').textContent = vigentes;
