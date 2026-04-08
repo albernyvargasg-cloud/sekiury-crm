@@ -5199,13 +5199,33 @@ function filtrarPolizas() {
   const est = document.getElementById('filtro-estado-poliza').value;
   const ramo = document.getElementById('filtro-ramo').value;
   const aseg = document.getElementById('filtro-aseguradora').value;
+
+  const hoyFP = new Date(); hoyFP.setHours(0,0,0,0);
+  const en30FP = new Date(hoyFP); en30FP.setDate(en30FP.getDate()+30);
+
   filtradas_p = polizas.filter(p => {
     const txt = `${p.numero_poliza||''} ${p.nombres_cliente||''} ${p.apellidos_cliente||''} ${p.aseguradora||''} ${p.cedula_cliente||''}`.toLowerCase();
-    return (!q || txt.includes(q)) &&
-           (!est || p.estado === est) &&
-           (!ramo || p.ramo === ramo) &&
-           (!aseg || p.aseguradora === aseg);
+    if (q && !txt.includes(q)) return false;
+    if (ramo && p.ramo !== ramo) return false;
+    if (aseg && p.aseguradora !== aseg) return false;
+    // Filtro de estado — "por renovar" incluye vigentes que vencen en 30 días
+    if (est === 'por renovar') {
+      if (p.estado === 'por renovar') return true;
+      if (p.estado === 'vigente' && p.fecha_fin) {
+        const ff = new Date(p.fecha_fin); ff.setHours(0,0,0,0);
+        return ff >= hoyFP && ff <= en30FP;
+      }
+      return false;
+    }
+    if (est && p.estado !== est) return false;
+    return true;
   });
+
+  // Ordenar por renovar: primero las más próximas a vencer
+  if (est === 'por renovar') {
+    filtradas_p.sort((a,b) => new Date(a.fecha_fin||'9999') - new Date(b.fecha_fin||'9999'));
+  }
+
   renderPolizas();
   document.getElementById('presult-count').textContent = filtradas_p.length + ' de ' + polizas.length + ' pólizas';
   document.getElementById('polizas-count').textContent = '(' + filtradas_p.length + ')';
