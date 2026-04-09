@@ -1031,13 +1031,25 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <h1>Informes <span id="inf-periodo-label">2025–2026</span></h1>
       <p>Producción, comisiones y proyección de ventas Sekiury</p>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <select id="inf-filtro-year" onchange="renderInformes()" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:8px 12px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;cursor:pointer;">
         <option value="todos">Todos los períodos</option>
         <option value="2026">2026</option>
         <option value="2025">2025</option>
         <option value="2024">2024</option>
         <option value="2023">2023</option>
+      </select>
+      <select id="inf-filtro-mes" onchange="renderInformes()" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:8px 12px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;cursor:pointer;">
+        <option value="">Todos los meses</option>
+        <option value="01">Enero</option><option value="02">Febrero</option>
+        <option value="03">Marzo</option><option value="04">Abril</option>
+        <option value="05">Mayo</option><option value="06">Junio</option>
+        <option value="07">Julio</option><option value="08">Agosto</option>
+        <option value="09">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <select id="inf-filtro-aseg" onchange="renderInformes()" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:8px 12px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;cursor:pointer;max-width:220px;">
+        <option value="">Todas las aseguradoras</option>
       </select>
       <select id="inf-filtro-asesor" onchange="renderInformes()" style="background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:8px 12px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;cursor:pointer;">
         <option value="">Todos los canales</option>
@@ -7006,12 +7018,16 @@ function setInfTab(tab) {
 }
 
 function getPolizasFiltradas() {
-  const year = document.getElementById('inf-filtro-year')?.value || 'todos';
+  const year   = document.getElementById('inf-filtro-year')?.value || 'todos';
+  const mes    = document.getElementById('inf-filtro-mes')?.value || '';
   const asesor = document.getElementById('inf-filtro-asesor')?.value || '';
+  const aseg   = document.getElementById('inf-filtro-aseg')?.value || '';
   return polizas.filter(p => {
     const matchYear = year === 'todos' || (p.fecha_inicio && p.fecha_inicio.startsWith(year)) || (p.fecha_fin && p.fecha_fin.startsWith(year));
+    const matchMes  = !mes || (p.fecha_inicio && p.fecha_inicio.slice(5,7) === mes) || (p.fecha_fin && p.fecha_fin.slice(5,7) === mes);
     const matchAsesor = !asesor || (p.vendedor||p.creada_por||'').toLowerCase().includes(asesor.toLowerCase());
-    return matchYear && matchAsesor;
+    const matchAseg = !aseg || (p.aseguradora||'').toLowerCase().includes(aseg.toLowerCase());
+    return matchYear && matchMes && matchAsesor && matchAseg;
   });
 }
 
@@ -7032,6 +7048,14 @@ function renderInformes() {
   const selA = document.getElementById('inf-filtro-asesor');
   if (selA && selA.options.length <= 1) {
     asesores.forEach(a => { const o = document.createElement('option'); o.value=a; o.textContent=a; selA.appendChild(o); });
+  }
+
+  // Poblar select aseguradoras
+  const selAseg = document.getElementById('inf-filtro-aseg');
+  if (selAseg) {
+    const curVal = selAseg.value;
+    const asegList = [...new Set(polizas.map(p=>p.aseguradora).filter(Boolean))].sort();
+    selAseg.innerHTML = '<option value="">Todas las aseguradoras</option>' + asegList.map(a=>`<option value="${a}"${a===curVal?' selected':''}>${a}</option>`).join('');
   }
 
   if (_infTab === 'resumen')      renderInfResumen(ps);
