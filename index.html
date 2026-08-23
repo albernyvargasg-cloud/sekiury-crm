@@ -4687,6 +4687,122 @@ function seedPolizas() {
   return POLIZAS_SEED;
 }
 let polizas = seedPolizas();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SINCRONIZACIÓN PÓLIZAS ↔ SUPABASE
+// ══════════════════════════════════════════════════════════════════════════════
+let ASEGURADORAS_CACHE = []; // [{id, nombre, nombre_corto}]
+
+async function cargarAseguradorasCache() {
+  try {
+    const { data, error } = await sb.from('aseguradoras').select('id, nombre, nombre_corto');
+    if (error) { console.error('Error cargando aseguradoras:', error.message); return; }
+    ASEGURADORAS_CACHE = data || [];
+  } catch (e) { console.error('Error de red cargando aseguradoras:', e); }
+}
+
+// Busca el id de Supabase para un nombre de aseguradora en texto libre (el que usa el formulario)
+function getAseguradoraId(nombreLibre) {
+  if (!nombreLibre) return null;
+  const q = nombreLibre.trim().toLowerCase();
+  let m = ASEGURADORAS_CACHE.find(a => (a.nombre||'').toLowerCase() === q || (a.nombre_corto||'').toLowerCase() === q);
+  if (m) return m.id;
+  m = ASEGURADORAS_CACHE.find(a => q.includes((a.nombre_corto||'').toLowerCase()) && a.nombre_corto);
+  if (m) return m.id;
+  m = ASEGURADORAS_CACHE.find(a => (a.nombre||'').toLowerCase().includes(q) || q.includes((a.nombre||'').toLowerCase()));
+  return m ? m.id : null;
+}
+
+// Nombre libre de la aseguradora a partir de su id (para reconstruir la vista local)
+function getAseguradoraNombre(id) {
+  const m = ASEGURADORAS_CACHE.find(a => a.id === id);
+  return m ? m.nombre : '';
+}
+
+// Clasifica el ramo detallado (texto libre del formulario) al catálogo corto de Supabase
+function mapRamoASupabase(ramoLibre) {
+  const r = (ramoLibre||'').toUpperCase();
+  if (r.includes('AUTO') || r.includes('VEHÍCULO') || r.includes('VEHICULO') || r.includes('MOTO') || r.includes('BICICLETA')) return 'Autos';
+  if (r.includes('SALUD') || r.includes('ENFERMEDAD')) return 'Salud';
+  if (r.includes('PYME') || r.includes('MULTIRIESGO')) return 'PYMES';
+  if (r.includes('HOGAR')) return 'Hogar';
+  if (r.includes('DEPORT') || r === 'ACCIDENTES') return 'Deportivo';
+  if (r.includes('ASISTENCIA') || r.includes('TURISMO') || r.includes('AVENTURA')) return 'Viajes';
+  if (r.includes('RESPONSABILIDAD CIVIL')) return 'RC';
+  if (r.includes('CUMPLIMIENTO')) return 'Cumplimiento';
+  if (r.includes('VIDA')) return 'Vida';
+  return 'Otro';
+}
+
+// Busca el id de Supabase de un cliente por su número de documento (usa la caché local ya sincronizada)
+function getClienteIdPorCedula(cedula) {
+  if (!cedula) return null;
+  const c = clientes.find(x => (x.numero_documento||'') === cedula);
+  return c ? c._id : null;
+}
+
+// Mapea una fila de public.polizas (Supabase) al formato que usa el formulario del CRM
+function mapPolizaDesdeSupabase(row) {
+  const estadoMap = { 'Vigente':'vigente', 'Por Renovar':'por renovar', 'Vencida':'vencida', 'Cancelada':'cancelada', 'Cotización':'vigente', 'Expedición':'vigente' };
+  const cliente = clientes.find(c => c._id === row.cliente_id);
+  return {
+    _id: row.id,
+    numero_poliza: row.numero_poliza || '',
+    estado: estadoMap[row.estado] || 'vigente',
+    aseguradora: getAseguradoraNombre(row.aseguradora_id),
+    ramo: row.ramo || '',
+    subramo: '',
+    riesgo: row.riesgo || '',
+    valor_asegurado: '',
+    fecha_inicio: row.vigencia_inicio || '',
+    fecha_fin: row.vigencia_fin || '',
+    nombres_cliente: cliente ? cliente.nombre : '',
+    apellidos_cliente: cliente ? cliente.apellidos : '',
+    cedula_cliente: cliente ? cliente.numero_documento : '',
+    prima_neta: row.prima_neta || '',
+    total: row.prima_total || '',
+    forma_pago: row.forma_pago || 'Contado',
+    observaciones: row.observaciones || '',
+    fecha_creacion: (row.created_at||'').slice(0,10),
+  };
+}
+
+// Mapea el formato del formulario del CRM a las columnas reales de public.polizas
+function mapPolizaASupabase(data) {
+  const estadoMap = { 'vigente':'Vigente', 'por renovar':'Por Renovar', 'vencida':'Vencida', 'cancelada':'Cancelada' };
+  return {
+    numero_poliza: data.numero_poliza || '',
+    cliente_id: getClienteIdPorCedula(data.cedula_cliente),
+    aseguradora_id: getAseguradoraId(data.aseguradora),
+    ramo: mapRamoASupabase(data.ramo),
+    riesgo: data.riesgo || null,
+    vigencia_inicio: data.fecha_inicio || null,
+    vigencia_fin: data.fecha_fin || null,
+    prima_total: parseFloat(data.total) || 0,
+    prima_neta: parseFloat(data.prima_neta) || null,
+    forma_pago: data.forma_pago || 'Contado',
+    estado: estadoMap[data.estado] || 'Vigente',
+    observaciones: data.observaciones || null,
+  };
+}
+
+// Trae todas las pólizas desde Supabase y refresca la vista. Se llama al iniciar sesión.
+async function cargarPolizasDesdeSupabase() {
+  try {
+    if (ASEGURADORAS_CACHE.length === 0) await cargarAseguradorasCache();
+    const { data, error } = await sb.from('polizas').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando pólizas de Supabase:', error.message); return; }
+    polizas = (data || []).map(mapPolizaDesdeSupabase);
+    guardarPolizasLS();
+    filtradas_p = [...polizas];
+    if (typeof filtrarPolizas === 'function') filtrarPolizas();
+    if (typeof actualizarStatsPolizas === 'function') actualizarStatsPolizas();
+    if (typeof actualizarDashboard === 'function') actualizarDashboard();
+  } catch (e) {
+    console.error('Error de red cargando pólizas:', e);
+    showToast('No se pudo sincronizar pólizas con Supabase — mostrando datos locales', 'err');
+  }
+}
 let filtradas_p = [...polizas];
 
 // ── DATOS MAESTROS (Sofseguros) ─────────────────────────────────────────────
@@ -5402,37 +5518,55 @@ function leerFormPoliza() {
   };
 }
 
-function guardarPoliza() {
+async function guardarPoliza() {
   const data = leerFormPoliza();
   if (!data.numero_poliza) { showToast('El numero de poliza es obligatorio','err'); return; }
-  if (editandoPolizaId) {
-    const idx = polizas.findIndex(p=>p._id===editandoPolizaId);
-    polizas[idx] = {...polizas[idx], ...data};
-    showToast('Poliza actualizada');
-  } else {
-    data._id = genId();
-    data.fecha_creacion = new Date().toISOString().slice(0,10);
-    polizas.push(data);
-    showToast('Poliza creada');
+
+  const payload = mapPolizaASupabase(data);
+  if (!payload.cliente_id) { showToast('No se encontró el cliente por su cédula — selecciónalo desde el buscador', 'err'); return; }
+  if (!payload.aseguradora_id) { showToast('No se reconoce la aseguradora seleccionada — verifica el nombre', 'err'); return; }
+
+  const btnGuardar = document.querySelector('#modal-poliza button[onclick="guardarPoliza()"]');
+  const textoOriginalBtn = btnGuardar ? btnGuardar.textContent : '';
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
+
+  try {
+    if (editandoPolizaId) {
+      const { error } = await sb.from('polizas').update(payload).eq('id', editandoPolizaId);
+      if (error) throw error;
+      showToast('Poliza actualizada');
+    } else {
+      payload.agente_id = SESION_ACTUAL?.agente_id || null;
+      const { error } = await sb.from('polizas').insert(payload);
+      if (error) throw error;
+      showToast('Poliza creada');
+    }
+    await cargarPolizasDesdeSupabase();
+    actualizarStatsPolizas();
+    actualizarDashboard();
+    cerrarModal('modal-poliza');
+    setTimeout(() => sincronizarTareasAutomaticas(), 300);
+  } catch (e) {
+    console.error('Error guardando póliza en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = textoOriginalBtn; }
   }
-  guardarPolizasLS();
-  filtradas_p = [...polizas];
-  filtrarPolizas();
-  actualizarStatsPolizas();
-  actualizarDashboard();
-  cerrarModal('modal-poliza');
-  setTimeout(() => sincronizarTareasAutomaticas(), 300);
 }
 
-function eliminarPoliza(id) {
+async function eliminarPoliza(id) {
   if (!confirm('¿Eliminar esta póliza?')) return;
-  polizas = polizas.filter(p=>p._id!==id);
-  guardarPolizasLS();
-  filtradas_p = [...polizas];
-  filtrarPolizas();
-  actualizarStatsPolizas();
-  cerrarDetallePoliza();
-  showToast('Póliza eliminada');
+  try {
+    const { error } = await sb.from('polizas').delete().eq('id', id);
+    if (error) throw error;
+    await cargarPolizasDesdeSupabase();
+    actualizarStatsPolizas();
+    cerrarDetallePoliza();
+    showToast('Póliza eliminada');
+  } catch (e) {
+    console.error('Error eliminando póliza en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 function abrirImportPolizas() {
@@ -8657,8 +8791,8 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--t3', '#7AA0C4');
   }
 
-  // Sesión confirmada — sincronizar Clientes con Supabase (fuente de verdad en la nube)
-  cargarClientesDesdeSupabase();
+  // Sesión confirmada — sincronizar Clientes y Pólizas con Supabase (fuente de verdad en la nube)
+  cargarClientesDesdeSupabase().then(() => cargarPolizasDesdeSupabase());
 }
 
 async function verificarSesion() {
