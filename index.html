@@ -4651,6 +4651,82 @@ function exportarRecibos() {
 // COBROS
 // ══════════════════════════════════════════════════════════════════
 let cobros = JSON.parse(localStorage.getItem('sekiury_cobros') || '[]');
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SINCRONIZACIÓN COBROS ↔ SUPABASE
+// ══════════════════════════════════════════════════════════════════════════════
+// public.cobros exige poliza_id, cliente_id, fecha_vence y valor_cuota (NOT NULL).
+// Si una fila importada no puede resolver esos datos, se omite y se reporta al usuario.
+function mapCobroASupabase(c) {
+  const clienteId = getClienteIdPorCedula(c.documento_cliente);
+  const polizaId = getPolizaIdPorNumero(c.numero_poliza);
+  const fechaVence = c.fecha_limite || null;
+  const valorCuota = parseFloat(String(c.prima_total_pago || c.valor_neto || 0).replace(/[^0-9.-]/g, '')) || 0;
+
+  if (!clienteId) return { error: `Cliente no encontrado (doc: ${c.documento_cliente||'—'})` };
+  if (!polizaId) return { error: `Póliza no encontrada (# ${c.numero_poliza||'—'})` };
+  if (!fechaVence) return { error: `Sin fecha límite de pago (póliza ${c.numero_poliza||'—'})` };
+
+  const dias = parseFloat(c.dias_vencidos||0);
+  return {
+    payload: {
+      poliza_id: polizaId,
+      cliente_id: clienteId,
+      tipo: 'Prima Cliente',
+      num_cuota: parseInt(c.numero_pago) || 1,
+      valor_cuota: valorCuota,
+      prima_neta: parseFloat(String(c.prima_neta||0).replace(/[^0-9.-]/g,'')) || null,
+      comision_valor: parseFloat(String(c.comision_recibir||0).replace(/[^0-9.-]/g,'')) || null,
+      fecha_vence: fechaVence,
+      medio_pago: c.forma_pago || null,
+      referencia_pago: c.numero_factura || c.numero_remision || null,
+      estado: dias > 0 ? 'Vencida' : 'Pendiente',
+      observaciones: c.ultima_obs || c.obs_pago || null,
+      agente_id: SESION_ACTUAL?.agente_id || null,
+    }
+  };
+}
+
+function mapCobroDesdeSupabase(row) {
+  const cliente = clientes.find(c => c._id === row.cliente_id);
+  const poliza = polizas.find(p => p._id === row.poliza_id);
+  return {
+    _id: row.id,
+    numero_poliza: poliza ? poliza.numero_poliza : '',
+    aseguradora: poliza ? poliza.aseguradora : '',
+    ramo: poliza ? poliza.ramo : '',
+    nombre_cliente: cliente ? `${cliente.nombre} ${cliente.apellidos||''}`.trim() : '',
+    documento_cliente: cliente ? cliente.numero_documento : '',
+    vendedor: getAgenteNombre(row.agente_id) || '',
+    numero_pago: row.num_cuota || '',
+    prima_neta: row.prima_neta || '',
+    prima_total_pago: row.valor_cuota || '',
+    saldo_oficina: row.estado === 'Pagada' ? 0 : (row.valor_cuota || 0),
+    comision_recibir: row.comision_valor || '',
+    fecha_limite: row.fecha_vence || '',
+    dias_vencidos: row.estado === 'Vencida' && row.fecha_vence
+      ? Math.max(0, Math.floor((Date.now() - new Date(row.fecha_vence+'T00:00:00').getTime()) / 86400000))
+      : 0,
+    forma_pago: row.medio_pago || '',
+    numero_factura: row.referencia_pago || '',
+    ultima_obs: row.observaciones || '',
+  };
+}
+
+async function cargarCobrosDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('cobros').select('*').order('fecha_vence', { ascending: true });
+    if (error) { console.error('Error cargando cobros de Supabase:', error.message); return; }
+    cobros = (data || []).map(mapCobroDesdeSupabase);
+    guardarCobrosLS();
+    filtrados_c = [...cobros];
+    if (typeof filtrarCobros === 'function') filtrarCobros();
+    if (typeof actualizarStatsCobros === 'function') actualizarStatsCobros();
+  } catch (e) {
+    console.error('Error de red cargando cobros:', e);
+    showToast('No se pudo sincronizar cobros con Supabase — mostrando datos locales', 'err');
+  }
+}
 let filtrados_c = [...cobros];
 let importDataCobros = [];
 
@@ -4831,14 +4907,41 @@ function handleFileCobros(file) {
   reader.readAsBinaryString(file);
 }
 
-function confirmarImportCobros() {
-  cobros = [...cobros, ...importDataCobros];
-  guardarCobrosLS();
-  filtrados_c = [...cobros];
-  filtrarCobros();
-  actualizarStatsCobros();
-  cerrarModal('modal-import-cobros');
-  showToast(`${importDataCobros.length} cobros importados`);
+async function confirmarImportCobros() {
+  const btn = document.getElementById('btn-confirmar-import-cobros');
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Importando...'; }
+
+  const validos = [];
+  const errores = [];
+  importDataCobros.forEach(c => {
+    const r = mapCobroASupabase(c);
+    if (r.error) errores.push(`${c.nombre_cliente||'(sin nombre)'}: ${r.error}`);
+    else validos.push(r.payload);
+  });
+
+  try {
+    if (validos.length > 0) {
+      const { error } = await sb.from('cobros').insert(validos);
+      if (error) throw error;
+    }
+    await cargarCobrosDesdeSupabase();
+    actualizarStatsCobros();
+    cerrarModal('modal-import-cobros');
+
+    if (errores.length > 0) {
+      const detalle = errores.slice(0, 5).join(' | ') + (errores.length > 5 ? ` … y ${errores.length-5} más` : '');
+      showToast(`${validos.length} cobros importados. ${errores.length} omitidos: ${detalle}`, 'err');
+      console.warn('Cobros omitidos en la importación:', errores);
+    } else {
+      showToast(`${validos.length} cobros importados`);
+    }
+  } catch (e) {
+    console.error('Error importando cobros a Supabase:', e);
+    showToast('Error al importar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+  }
 }
 
 function exportarCobros() {
@@ -8976,11 +9079,12 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--t3', '#7AA0C4');
   }
 
-  // Sesión confirmada — sincronizar Clientes, Pólizas, Siniestros y Tareas con Supabase (fuente de verdad en la nube)
+  // Sesión confirmada — sincronizar Clientes, Pólizas, Siniestros, Tareas y Cobros con Supabase
   cargarClientesDesdeSupabase()
     .then(() => cargarPolizasDesdeSupabase())
     .then(() => cargarSiniestrosDesdeSupabase())
-    .then(() => cargarTareasDesdeSupabase());
+    .then(() => cargarTareasDesdeSupabase())
+    .then(() => cargarCobrosDesdeSupabase());
 }
 
 async function verificarSesion() {
