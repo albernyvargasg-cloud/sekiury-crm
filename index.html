@@ -3689,6 +3689,70 @@ function exportarClientes() {
 // SINIESTROS
 // ══════════════════════════════════════════════════════════════════
 let siniestros = JSON.parse(localStorage.getItem('sekiury_siniestros') || '[]');
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SINCRONIZACIÓN SINIESTROS ↔ SUPABASE
+// ══════════════════════════════════════════════════════════════════════════════
+function getPolizaIdPorNumero(numeroPoliza) {
+  if (!numeroPoliza) return null;
+  const p = polizas.find(x => (x.numero_poliza||'') === numeroPoliza);
+  return p ? p._id : null;
+}
+
+function mapSiniestroDesdeSupabase(row) {
+  const estadoMap = { 'Abierto':'abierto', 'En Proceso':'en tramite', 'Resuelto':'pagado', 'Cerrado':'cerrado' };
+  const cliente = clientes.find(c => c._id === row.cliente_id);
+  const poliza = polizas.find(p => p._id === row.poliza_id);
+  return {
+    _id: row.id,
+    numero_siniestro: row.radicado || '',
+    tipo: row.tipo || 'Otro',
+    cliente: cliente ? `${cliente.nombre} ${cliente.apellidos||''}`.trim() : '',
+    documento: cliente ? cliente.numero_documento : '',
+    numero_poliza: poliza ? poliza.numero_poliza : '',
+    aseguradora: poliza ? poliza.aseguradora : '',
+    placa: '',
+    causa: '',
+    fecha_ocurrencia: row.fecha_siniestro || '',
+    fecha_radicacion: '',
+    valor_reclamado: row.valor_reclamado || '',
+    valor_pagado: row.valor_aprobado || '',
+    estado: estadoMap[row.estado] || 'abierto',
+    obs: row.observaciones || row.descripcion || '',
+    fecha_creacion: (row.created_at||'').slice(0,10),
+  };
+}
+
+function mapSiniestroASupabase(data) {
+  const estadoMap = { 'abierto':'Abierto', 'en tramite':'En Proceso', 'pagado':'Resuelto', 'rechazado':'Cerrado', 'cerrado':'Cerrado' };
+  return {
+    cliente_id: getClienteIdPorCedula(data.documento),
+    poliza_id: getPolizaIdPorNumero(data.numero_poliza),
+    fecha_siniestro: data.fecha_ocurrencia || new Date().toISOString().slice(0,10),
+    tipo: data.tipo || 'Otro',
+    radicado: data.numero_siniestro || null,
+    descripcion: data.obs || null,
+    valor_reclamado: parseFloat(data.valor_reclamado) || null,
+    valor_aprobado: parseFloat(data.valor_pagado) || null,
+    estado: estadoMap[data.estado] || 'Abierto',
+    observaciones: data.obs || null,
+  };
+}
+
+async function cargarSiniestrosDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('siniestros').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando siniestros de Supabase:', error.message); return; }
+    siniestros = (data || []).map(mapSiniestroDesdeSupabase);
+    guardarSiniestrosLS();
+    filtrados_s = [...siniestros];
+    if (typeof filtrarSiniestros === 'function') filtrarSiniestros();
+    if (typeof actualizarStatsSiniestros === 'function') actualizarStatsSiniestros();
+  } catch (e) {
+    console.error('Error de red cargando siniestros:', e);
+    showToast('No se pudo sincronizar siniestros con Supabase — mostrando datos locales', 'err');
+  }
+}
 let filtrados_s = [...siniestros];
 let editandoSiniestroId = null;
 
@@ -3922,7 +3986,7 @@ function editarSiniestro(id) {
   abrirModal('modal-siniestro');
 }
 
-function guardarSiniestro() {
+async function guardarSiniestro() {
   const cliente = document.getElementById('sf-cliente').value.trim();
   if (!cliente) { showToast('El nombre del cliente es obligatorio','err'); return; }
   const data = {
@@ -3941,32 +4005,43 @@ function guardarSiniestro() {
     estado: document.getElementById('sf-estado').value,
     obs: document.getElementById('sf-obs').value.trim(),
   };
-  if (editandoSiniestroId) {
-    const idx = siniestros.findIndex(s=>s._id===editandoSiniestroId);
-    siniestros[idx] = {...siniestros[idx], ...data};
-    showToast('Siniestro actualizado');
-  } else {
-    data._id = genId();
-    data.fecha_creacion = new Date().toISOString().slice(0,10);
-    siniestros.push(data);
-    showToast('Siniestro registrado');
+
+  const payload = mapSiniestroASupabase(data);
+  if (!payload.cliente_id) { showToast('No se encontró el cliente por su cédula/NIT — verifica el documento', 'err'); return; }
+
+  try {
+    if (editandoSiniestroId) {
+      const { error } = await sb.from('siniestros').update(payload).eq('id', editandoSiniestroId);
+      if (error) throw error;
+      showToast('Siniestro actualizado');
+    } else {
+      payload.agente_id = SESION_ACTUAL?.agente_id || null;
+      const { error } = await sb.from('siniestros').insert(payload);
+      if (error) throw error;
+      showToast('Siniestro registrado');
+    }
+    await cargarSiniestrosDesdeSupabase();
+    actualizarStatsSiniestros();
+    cerrarModal('modal-siniestro');
+  } catch (e) {
+    console.error('Error guardando siniestro en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
   }
-  guardarSiniestrosLS();
-  filtrados_s = [...siniestros];
-  filtrarSiniestros();
-  actualizarStatsSiniestros();
-  cerrarModal('modal-siniestro');
 }
 
-function eliminarSiniestro(id) {
+async function eliminarSiniestro(id) {
   if (!confirm('¿Eliminar este siniestro?')) return;
-  siniestros = siniestros.filter(s=>s._id!==id);
-  guardarSiniestrosLS();
-  filtrados_s = [...siniestros];
-  filtrarSiniestros();
-  actualizarStatsSiniestros();
-  cerrarDetalleSiniestro();
-  showToast('Siniestro eliminado');
+  try {
+    const { error } = await sb.from('siniestros').delete().eq('id', id);
+    if (error) throw error;
+    await cargarSiniestrosDesdeSupabase();
+    actualizarStatsSiniestros();
+    cerrarDetalleSiniestro();
+    showToast('Siniestro eliminado');
+  } catch (e) {
+    console.error('Error eliminando siniestro en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -8791,8 +8866,10 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--t3', '#7AA0C4');
   }
 
-  // Sesión confirmada — sincronizar Clientes y Pólizas con Supabase (fuente de verdad en la nube)
-  cargarClientesDesdeSupabase().then(() => cargarPolizasDesdeSupabase());
+  // Sesión confirmada — sincronizar Clientes, Pólizas y Siniestros con Supabase (fuente de verdad en la nube)
+  cargarClientesDesdeSupabase()
+    .then(() => cargarPolizasDesdeSupabase())
+    .then(() => cargarSiniestrosDesdeSupabase());
 }
 
 async function verificarSesion() {
