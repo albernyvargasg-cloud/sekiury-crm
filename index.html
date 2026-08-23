@@ -4064,8 +4064,8 @@ async function cargarAgentesCache() {
 
 function getAgenteId(nombreLibre) {
   if (!nombreLibre) return null;
-  const q = nombreLibre.trim().toLowerCase();
-  const m = AGENTES_CACHE.find(a => (a.nombre||'').toLowerCase().includes(q) || q.includes((a.nombre||'').toLowerCase()));
+  const q = normalizarTexto(nombreLibre);
+  const m = AGENTES_CACHE.find(a => normalizarTexto(a.nombre).includes(q) || q.includes(normalizarTexto(a.nombre)));
   return m ? m.id : null;
 }
 
@@ -4077,10 +4077,10 @@ function getAgenteNombre(id) {
 // Búsqueda best-effort de cliente por nombre completo (el formulario de tareas usa texto libre, no cédula)
 function getClienteIdPorNombre(nombreLibre) {
   if (!nombreLibre) return null;
-  const q = nombreLibre.trim().toLowerCase();
-  const m = clientes.find(c => `${c.nombre||''} ${c.apellidos||''}`.trim().toLowerCase() === q);
+  const q = normalizarTexto(nombreLibre);
+  const m = clientes.find(c => normalizarTexto(`${c.nombre||''} ${c.apellidos||''}`) === q);
   if (m) return m._id;
-  const m2 = clientes.find(c => q.includes((c.nombre||'').toLowerCase()) && c.nombre);
+  const m2 = clientes.find(c => c.nombre && q.includes(normalizarTexto(c.nombre)));
   return m2 ? m2._id : null;
 }
 
@@ -4981,6 +4981,11 @@ let polizas = seedPolizas();
 // ══════════════════════════════════════════════════════════════════════════════
 let ASEGURADORAS_CACHE = []; // [{id, nombre, nombre_corto}]
 
+// Quita tildes/acentos y pasa a minúsculas, para comparar textos sin que las tildes rompan el match
+function normalizarTexto(s) {
+  return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
 async function cargarAseguradorasCache() {
   try {
     const { data, error } = await sb.from('aseguradoras').select('id, nombre, nombre_corto');
@@ -4992,12 +4997,12 @@ async function cargarAseguradorasCache() {
 // Busca el id de Supabase para un nombre de aseguradora en texto libre (el que usa el formulario)
 function getAseguradoraId(nombreLibre) {
   if (!nombreLibre) return null;
-  const q = nombreLibre.trim().toLowerCase();
-  let m = ASEGURADORAS_CACHE.find(a => (a.nombre||'').toLowerCase() === q || (a.nombre_corto||'').toLowerCase() === q);
+  const q = normalizarTexto(nombreLibre);
+  let m = ASEGURADORAS_CACHE.find(a => normalizarTexto(a.nombre) === q || normalizarTexto(a.nombre_corto) === q);
   if (m) return m.id;
-  m = ASEGURADORAS_CACHE.find(a => q.includes((a.nombre_corto||'').toLowerCase()) && a.nombre_corto);
+  m = ASEGURADORAS_CACHE.find(a => a.nombre_corto && q.includes(normalizarTexto(a.nombre_corto)));
   if (m) return m.id;
-  m = ASEGURADORAS_CACHE.find(a => (a.nombre||'').toLowerCase().includes(q) || q.includes((a.nombre||'').toLowerCase()));
+  m = ASEGURADORAS_CACHE.find(a => normalizarTexto(a.nombre).includes(q) || q.includes(normalizarTexto(a.nombre)));
   return m ? m.id : null;
 }
 
@@ -5009,7 +5014,7 @@ function getAseguradoraNombre(id) {
 
 // Clasifica el ramo detallado (texto libre del formulario) al catálogo corto de Supabase
 function mapRamoASupabase(ramoLibre) {
-  const r = (ramoLibre||'').toUpperCase();
+  const r = normalizarTexto(ramoLibre).toUpperCase();
   if (r.includes('AUTO') || r.includes('VEHÍCULO') || r.includes('VEHICULO') || r.includes('MOTO') || r.includes('BICICLETA')) return 'Autos';
   if (r.includes('SALUD') || r.includes('ENFERMEDAD')) return 'Salud';
   if (r.includes('PYME') || r.includes('MULTIRIESGO')) return 'PYMES';
