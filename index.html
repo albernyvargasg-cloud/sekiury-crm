@@ -4048,6 +4048,90 @@ async function eliminarSiniestro(id) {
 // TAREAS
 // ══════════════════════════════════════════════════════════════════
 let tareas = JSON.parse(localStorage.getItem('sekiury_tareas') || '[]');
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SINCRONIZACIÓN TAREAS ↔ SUPABASE
+// ══════════════════════════════════════════════════════════════════════════════
+let AGENTES_CACHE = []; // [{id, nombre, apellidos}]
+
+async function cargarAgentesCache() {
+  try {
+    const { data, error } = await sb.from('agentes').select('id, nombre, apellidos');
+    if (error) { console.error('Error cargando agentes:', error.message); return; }
+    AGENTES_CACHE = data || [];
+  } catch (e) { console.error('Error de red cargando agentes:', e); }
+}
+
+function getAgenteId(nombreLibre) {
+  if (!nombreLibre) return null;
+  const q = nombreLibre.trim().toLowerCase();
+  const m = AGENTES_CACHE.find(a => (a.nombre||'').toLowerCase().includes(q) || q.includes((a.nombre||'').toLowerCase()));
+  return m ? m.id : null;
+}
+
+function getAgenteNombre(id) {
+  const m = AGENTES_CACHE.find(a => a.id === id);
+  return m ? m.nombre : '';
+}
+
+// Búsqueda best-effort de cliente por nombre completo (el formulario de tareas usa texto libre, no cédula)
+function getClienteIdPorNombre(nombreLibre) {
+  if (!nombreLibre) return null;
+  const q = nombreLibre.trim().toLowerCase();
+  const m = clientes.find(c => `${c.nombre||''} ${c.apellidos||''}`.trim().toLowerCase() === q);
+  if (m) return m._id;
+  const m2 = clientes.find(c => q.includes((c.nombre||'').toLowerCase()) && c.nombre);
+  return m2 ? m2._id : null;
+}
+
+function mapTareaDesdeSupabase(row) {
+  const prioridadMap = { 'Alta':'alta', 'Normal':'media', 'Baja':'baja', 'Urgente':'alta' };
+  const cliente = clientes.find(c => c._id === row.cliente_id);
+  const poliza = polizas.find(p => p._id === row.poliza_id);
+  return {
+    _id: row.id,
+    nombre: row.titulo || '',
+    cliente: cliente ? `${cliente.nombre} ${cliente.apellidos||''}`.trim() : '',
+    poliza: poliza ? poliza.numero_poliza : '',
+    asignado: getAgenteNombre(row.asignado_a) || '',
+    prioridad: prioridadMap[row.prioridad] || 'media',
+    tipo: row.auto_generada ? 'Automática' : 'Seguimiento',
+    fecha_vencimiento: row.fecha_limite || '',
+    obs: row.descripcion || '',
+    completada: row.estado === 'Hecha',
+    automatica: !!row.auto_generada,
+    fecha_creacion: (row.created_at||'').slice(0,10),
+  };
+}
+
+function mapTareaASupabase(data, completada) {
+  const prioridadMap = { 'alta':'Alta', 'media':'Normal', 'baja':'Baja' };
+  return {
+    titulo: data.nombre || '',
+    descripcion: data.obs || null,
+    fecha_limite: data.fecha_vencimiento || null,
+    prioridad: prioridadMap[data.prioridad] || 'Normal',
+    estado: completada ? 'Hecha' : 'Pendiente',
+    asignado_a: getAgenteId(data.asignado),
+    cliente_id: getClienteIdPorNombre(data.cliente),
+    poliza_id: getPolizaIdPorNumero(data.poliza),
+  };
+}
+
+async function cargarTareasDesdeSupabase() {
+  try {
+    if (AGENTES_CACHE.length === 0) await cargarAgentesCache();
+    const { data, error } = await sb.from('tareas').select('*').order('fecha_limite', { ascending: true });
+    if (error) { console.error('Error cargando tareas de Supabase:', error.message); return; }
+    tareas = (data || []).map(mapTareaDesdeSupabase);
+    guardarTareasLS();
+    if (typeof filtrarTareas === 'function') filtrarTareas();
+    if (typeof actualizarStatsTareas === 'function') actualizarStatsTareas();
+  } catch (e) {
+    console.error('Error de red cargando tareas:', e);
+    showToast('No se pudo sincronizar tareas con Supabase — mostrando datos locales', 'err');
+  }
+}
 let filtradas_t = [...tareas];
 let editandoTareaId = null;
 let tabTareaActual = 'todas';
@@ -4245,13 +4329,24 @@ function renderTareas() {
   }).join('');
 }
 
-function toggleTarea(id) {
+async function toggleTarea(id) {
   const idx = tareas.findIndex(t=>t._id===id);
-  tareas[idx].completada = !tareas[idx].completada;
-  guardarTareasLS();
+  const nuevoEstado = !tareas[idx].completada;
+  tareas[idx].completada = nuevoEstado; // respuesta visual inmediata
   actualizarStatsTareas();
   filtrarTareas();
-  showToast(tareas[idx].completada ? 'Tarea completada ✅' : 'Tarea reabierta');
+  try {
+    const { error } = await sb.from('tareas').update({ estado: nuevoEstado ? 'Hecha' : 'Pendiente' }).eq('id', id);
+    if (error) throw error;
+    guardarTareasLS();
+    showToast(nuevoEstado ? 'Tarea completada ✅' : 'Tarea reabierta');
+  } catch (e) {
+    console.error('Error actualizando estado de tarea en Supabase:', e);
+    tareas[idx].completada = !nuevoEstado; // revertir si falló
+    actualizarStatsTareas();
+    filtrarTareas();
+    showToast('Error al actualizar en Supabase', 'err');
+  }
 }
 
 function abrirNuevaTarea() {
@@ -4284,7 +4379,7 @@ function editarTarea(id) {
   abrirModal('modal-tarea');
 }
 
-function guardarTarea() {
+async function guardarTarea() {
   const nombre = document.getElementById('tf-nombre').value.trim();
   const fecha = document.getElementById('tf-fecha').value;
   if (!nombre) { showToast('El nombre es obligatorio','err'); return; }
@@ -4299,30 +4394,45 @@ function guardarTarea() {
     fecha_vencimiento: fecha,
     obs: document.getElementById('tf-obs').value.trim(),
   };
-  if (editandoTareaId) {
-    const idx = tareas.findIndex(t=>t._id===editandoTareaId);
-    tareas[idx] = {...tareas[idx], ...data};
-    showToast('Tarea actualizada');
-  } else {
-    data._id = genId();
-    data.completada = false;
-    data.fecha_creacion = new Date().toISOString().slice(0,10);
-    tareas.push(data);
-    showToast('Tarea creada');
+
+  try {
+    if (editandoTareaId) {
+      const actual = tareas.find(t => t._id === editandoTareaId);
+      const payload = mapTareaASupabase(data, actual ? actual.completada : false);
+      const { error } = await sb.from('tareas').update(payload).eq('id', editandoTareaId);
+      if (error) throw error;
+      showToast('Tarea actualizada');
+    } else {
+      const payload = mapTareaASupabase(data, false);
+      payload.created_by = SESION_ACTUAL?.agente_id || null;
+      payload.auto_generada = false;
+      const { error } = await sb.from('tareas').insert(payload);
+      if (error) throw error;
+      showToast('Tarea creada');
+    }
+    await cargarTareasDesdeSupabase();
+    actualizarStatsTareas();
+    filtrarTareas();
+    cerrarModal('modal-tarea');
+  } catch (e) {
+    console.error('Error guardando tarea en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
   }
-  guardarTareasLS();
-  actualizarStatsTareas();
-  filtrarTareas();
-  cerrarModal('modal-tarea');
 }
 
-function eliminarTarea(id) {
+async function eliminarTarea(id) {
   if (!confirm('¿Eliminar esta tarea?')) return;
-  tareas = tareas.filter(t=>t._id!==id);
-  guardarTareasLS();
-  actualizarStatsTareas();
-  filtrarTareas();
-  showToast('Tarea eliminada');
+  try {
+    const { error } = await sb.from('tareas').delete().eq('id', id);
+    if (error) throw error;
+    await cargarTareasDesdeSupabase();
+    actualizarStatsTareas();
+    filtrarTareas();
+    showToast('Tarea eliminada');
+  } catch (e) {
+    console.error('Error eliminando tarea en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -8866,10 +8976,11 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--t3', '#7AA0C4');
   }
 
-  // Sesión confirmada — sincronizar Clientes, Pólizas y Siniestros con Supabase (fuente de verdad en la nube)
+  // Sesión confirmada — sincronizar Clientes, Pólizas, Siniestros y Tareas con Supabase (fuente de verdad en la nube)
   cargarClientesDesdeSupabase()
     .then(() => cargarPolizasDesdeSupabase())
-    .then(() => cargarSiniestrosDesdeSupabase());
+    .then(() => cargarSiniestrosDesdeSupabase())
+    .then(() => cargarTareasDesdeSupabase());
 }
 
 async function verificarSesion() {
