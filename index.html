@@ -2824,6 +2824,84 @@ function seedClientes() {
   return CLIENTES_SEED;
 }
 let clientes = seedClientes();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SINCRONIZACIÓN CLIENTES ↔ SUPABASE
+// ══════════════════════════════════════════════════════════════════════════════
+// Mapea una fila de la tabla public.clientes (Supabase) al formato que usa el CRM
+function mapClienteDesdeSupabase(row) {
+  const generoMap = { 'M':'Masculino', 'F':'Femenino', 'Otro':'Otro' };
+  const estadoMap = { 'Activo':'activo', 'Inactivo':'inactivo', 'Prospecto':'prospecto' };
+  const tipoDocMap = { 'PA':'PP' }; // Supabase usa 'PA', el formulario del CRM usa 'PP'
+  return {
+    _id: row.id,
+    agente_id: row.agente_id,
+    nombre: row.nombre || '',
+    apellidos: row.apellidos || '',
+    alias: row.sobrenombre || '',
+    numero_documento: row.numero_doc || '',
+    tipo_documento: tipoDocMap[row.tipo_doc] || row.tipo_doc || 'CC',
+    celular: row.celular || '',
+    celular2: row.celular_alt || '',
+    telefono: row.telefono || '',
+    email: row.email || '',
+    email2: row.email_alt || '',
+    ciudad: row.ciudad || '',
+    direccion: row.direccion || '',
+    ocupacion: row.ocupacion || '',
+    genero: generoMap[row.genero] || '',
+    fecha_nacimiento: row.fecha_nacimiento || '',
+    cuenta_bancaria: row.cuenta_bancaria || '',
+    observaciones: row.observaciones || '',
+    estado: estadoMap[row.estado] || (row.estado||'activo').toLowerCase(),
+    fecha_creacion: (row.created_at||'').slice(0,10),
+  };
+}
+
+// Mapea el formato del formulario del CRM a las columnas reales de public.clientes
+function mapClienteASupabase(data) {
+  const generoMap = { 'masculino':'M', 'femenino':'F' };
+  const estadoMap = { 'activo':'Activo', 'inactivo':'Inactivo', 'prospecto':'Prospecto' };
+  const tipoDocMap = { 'PP':'PA' }; // El formulario usa 'PP', Supabase exige 'PA'
+  const generoLower = (data.genero||'').toLowerCase();
+  return {
+    nombre: data.nombre || '',
+    apellidos: data.apellidos || null,
+    sobrenombre: data.alias || null,
+    numero_doc: data.numero_documento || '',
+    tipo_doc: tipoDocMap[data.tipo_documento] || data.tipo_documento || 'CC',
+    celular: data.celular || null,
+    celular_alt: data.celular2 || null,
+    telefono: data.telefono || null,
+    email: data.email || null,
+    email_alt: data.email2 || null,
+    ciudad: data.ciudad || null,
+    direccion: data.direccion || null,
+    ocupacion: data.ocupacion || null,
+    genero: generoMap[generoLower] || (generoLower ? 'Otro' : null),
+    fecha_nacimiento: data.fecha_nacimiento || null,
+    cuenta_bancaria: data.cuenta_bancaria || null,
+    observaciones: data.observaciones || null,
+    estado: estadoMap[data.estado] || 'Activo',
+  };
+}
+
+// Trae todos los clientes desde Supabase y refresca la vista. Se llama al iniciar sesión.
+async function cargarClientesDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('clientes').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando clientes de Supabase:', error.message); return; }
+    clientes = (data || []).map(mapClienteDesdeSupabase);
+    guardarLS(); // mantenemos una copia local como caché de respaldo
+    filtrados = [...clientes];
+    if (typeof filtrarClientes === 'function') filtrarClientes();
+    if (typeof actualizarStats === 'function') actualizarStats();
+    if (typeof actualizarDashboard === 'function') actualizarDashboard();
+  } catch (e) {
+    console.error('Error de red cargando clientes:', e);
+    showToast('No se pudo sincronizar con Supabase — mostrando datos locales', 'err');
+  }
+}
 // Migrar estados existentes
 clientes = clientes.map(c => {
   const e = (c.estado||'').toLowerCase();
@@ -3189,7 +3267,7 @@ function editarCliente(id) {
   abrirModal('modal-cliente');
 }
 
-function guardarCliente() {
+async function guardarCliente() {
   const nombre = document.getElementById('f-nombre').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio','err'); return; }
   const data = {
@@ -3214,33 +3292,47 @@ function guardarCliente() {
     sede:document.getElementById('f-sede').value.trim(),
     nombre_contacto:document.getElementById('f-contacto').value.trim(),
   };
-  if (editandoId) {
-    const idx = clientes.findIndex(c=>c._id===editandoId);
-    clientes[idx] = {...clientes[idx], ...data};
-    showToast('Cliente actualizado');
-  } else {
-    data._id = genId();
-    data.fecha_creacion = new Date().toISOString().slice(0,10);
-    clientes.push(data);
-    showToast('Cliente creado exitosamente');
+  const payload = mapClienteASupabase(data);
+  const btnGuardar = document.querySelector('#modal-cliente button[onclick="guardarCliente()"]');
+  const textoOriginalBtn = btnGuardar ? btnGuardar.textContent : '';
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
+
+  try {
+    if (editandoId) {
+      const { error } = await sb.from('clientes').update(payload).eq('id', editandoId);
+      if (error) throw error;
+      showToast('Cliente actualizado');
+    } else {
+      payload.agente_id = SESION_ACTUAL?.agente_id || null;
+      const { error } = await sb.from('clientes').insert(payload);
+      if (error) throw error;
+      showToast('Cliente creado exitosamente');
+    }
+    await cargarClientesDesdeSupabase();
+    initConfig();
+    actualizarStats();
+    cerrarModal('modal-cliente');
+  } catch (e) {
+    console.error('Error guardando cliente en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = textoOriginalBtn; }
   }
-  guardarLS();
-  filtrados = [...clientes];
-  filtrarClientes();
-  initConfig();
-actualizarStats();
-  cerrarModal('modal-cliente');
 }
 
-function eliminarCliente(id) {
+async function eliminarCliente(id) {
   if (!confirm('¿Eliminar este cliente?')) return;
-  clientes = clientes.filter(c=>c._id!==id);
-  guardarLS();
-  filtrados = clientes.filter(c=>filtrados.some(f=>f._id===c._id));
-  filtrarClientes();
-  actualizarStats();
-  cerrarDetalle();
-  showToast('Cliente eliminado');
+  try {
+    const { error } = await sb.from('clientes').delete().eq('id', id);
+    if (error) throw error;
+    await cargarClientesDesdeSupabase();
+    actualizarStats();
+    cerrarDetalle();
+    showToast('Cliente eliminado');
+  } catch (e) {
+    console.error('Error eliminando cliente en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 // ── DETALLE ────────────────────────────────────────────────────────────────
@@ -8564,6 +8656,9 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--t2', '#2F4D8A');
     document.documentElement.style.setProperty('--t3', '#7AA0C4');
   }
+
+  // Sesión confirmada — sincronizar Clientes con Supabase (fuente de verdad en la nube)
+  cargarClientesDesdeSupabase();
 }
 
 async function verificarSesion() {
