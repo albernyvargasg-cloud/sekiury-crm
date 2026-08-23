@@ -5627,7 +5627,7 @@ function buscarClientePoliza(q) {
   const txt = q.toLowerCase();
   const found = clientes.filter(c => {
     const nombre = ((c.nombre||'') + ' ' + (c.apellidos||'')).toLowerCase();
-    return nombre.includes(txt) || (c.documento||'').includes(txt);
+    return nombre.includes(txt) || (c.numero_documento||'').includes(txt);
   }).slice(0,6);
   if (!found.length) { res.innerHTML = '<div style="font-size:12px;color:var(--t3);padding:4px 0;">Sin resultados</div>'; return; }
   res.innerHTML = found.map(c => `
@@ -5636,7 +5636,7 @@ function buscarClientePoliza(q) {
       onmouseenter="this.style.borderColor='rgba(104,215,255,.4)'"
       onmouseleave="this.style.borderColor='var(--bdr)'">
       <strong style="color:var(--t1);">${c.nombre||''} ${c.apellidos||''}</strong>
-      <span style="color:var(--t3);margin-left:8px;">${c.documento||''}</span>
+      <span style="color:var(--t3);margin-left:8px;">${c.numero_documento||''}</span>
     </div>`).join('');
 }
 
@@ -5645,12 +5645,12 @@ function seleccionarClientePoliza(id) {
   if (!c) return;
   document.getElementById('pf-nombres').value = c.nombre||'';
   document.getElementById('pf-apellidos').value = c.apellidos||'';
-  document.getElementById('pf-cedula').value = c.documento||'';
+  document.getElementById('pf-cedula').value = c.numero_documento||'';
   document.getElementById('pf-nom-tomador').value = (c.nombre||'') + ' ' + (c.apellidos||'');
-  document.getElementById('pf-doc-tomador').value = c.documento||'';
+  document.getElementById('pf-doc-tomador').value = c.numero_documento||'';
   document.getElementById('pf-nom-asegurado').value = (c.nombre||'') + ' ' + (c.apellidos||'');
-  document.getElementById('pf-doc-asegurado').value = c.documento||'';
-  document.getElementById('pf-cliente-sel-txt').textContent = (c.nombre||'') + ' ' + (c.apellidos||'') + ' · ' + (c.documento||'');
+  document.getElementById('pf-doc-asegurado').value = c.numero_documento||'';
+  document.getElementById('pf-cliente-sel-txt').textContent = (c.nombre||'') + ' ' + (c.apellidos||'') + ' · ' + (c.numero_documento||'');
   document.getElementById('pf-cliente-sel').style.display = 'block';
   document.getElementById('pf-cliente-buscar').value = '';
   document.getElementById('pf-cliente-resultados').innerHTML = '';
