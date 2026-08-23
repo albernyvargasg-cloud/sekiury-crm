@@ -5814,6 +5814,8 @@ function leerFormPoliza() {
 async function guardarPoliza() {
   const data = leerFormPoliza();
   if (!data.numero_poliza) { showToast('El numero de poliza es obligatorio','err'); return; }
+  if (!data.fecha_inicio) { showToast('La Fecha de Inicio es obligatoria','err'); return; }
+  if (!data.fecha_fin) { showToast('La Fecha de Fin es obligatoria','err'); return; }
 
   const payload = mapPolizaASupabase(data);
   if (!payload.cliente_id) { showToast('No se encontró el cliente por su cédula — selecciónalo desde el buscador', 'err'); return; }
