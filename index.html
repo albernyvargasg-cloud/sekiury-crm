@@ -516,6 +516,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div class="nav-item" onclick="navTo('siniestros',this)">
       <span class="ic">⚠️</span><span class="lbl">Siniestros</span>
     </div>
+    <div class="nav-item" onclick="navTo('whatsapp',this)">
+      <span class="ic">💬</span><span class="lbl">WhatsApp</span><span class="bdg err" id="nav-wa-badge" style="display:none;">0</span>
+    </div>
     <div class="nav-sec">FINANZAS</div>
     <div class="nav-item" onclick="navTo('cobros',this)">
       <span class="ic">💳</span><span class="lbl">Cobros</span><span class="bdg warn">0</span>
@@ -888,6 +891,30 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
         <div style="margin-top:14px;">
           <button class="btn btn-success" onclick="abrirImportCobros()">📥 Importar Excel</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+    <div class="page" id="page-whatsapp">
+  <div class="page-header">
+    <div>
+      <h1>Bandeja <span>WhatsApp</span></h1>
+      <p>Conversaciones con clientes</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;height:calc(100vh - 200px);min-height:400px;">
+    <div style="width:300px;flex-shrink:0;background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;overflow-y:auto;">
+      <div id="wa-lista-conversaciones" style="padding:8px;"></div>
+    </div>
+    <div style="flex:1;background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;">
+      <div id="wa-hilo-header" style="padding:14px 18px;border-bottom:1px solid var(--bdr);font-weight:700;color:var(--t1);">Selecciona una conversación</div>
+      <div id="wa-hilo-mensajes" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;"></div>
+      <div id="wa-hilo-input" style="padding:12px;border-top:1px solid var(--bdr);display:none;gap:8px;">
+        <textarea id="wa-input-mensaje" placeholder="Escribe una respuesta..." style="flex:1;resize:none;height:44px;background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;color:var(--t1);padding:10px;"></textarea>
+        <button class="btn btn-primary" onclick="enviarRespuestaWhatsApp()">Enviar</button>
+      </div>
+      <div id="wa-hilo-bloqueado" style="padding:14px 18px;color:var(--t3);font-size:13px;display:none;border-top:1px solid var(--bdr);">
+        ⏱️ Han pasado más de 24h desde el último mensaje del cliente. Para reiniciar la conversación se necesita enviar una plantilla aprobada (renovación, cumpleaños, etc.) desde el módulo correspondiente.
       </div>
     </div>
   </div>
@@ -2959,7 +2986,7 @@ function navTo(page, el) {
   else document.querySelectorAll('.nav-item').forEach(n => {
     if (n.getAttribute('onclick') && n.getAttribute('onclick').includes("'"+page+"'")) n.classList.add('active');
   });
-  const titles = {dashboard:'Panel <span>Principal</span>',clientes:'<span>Clientes</span>',polizas:'<span>Pólizas</span>',cobros:'<span>Cobros</span>',recibos:'Recibos y <span>Cuadre de Caja</span>',tareas:'<span>Tareas</span>',siniestros:'<span>Siniestros</span>',informes:'<span>Informes</span>',archivos:'<span>Archivos</span>',comisiones:'<span>Comisiones</span>',config:'<span>Configuración</span>','motor-ia':'🧠 Motor <span>IA</span>',legal:'Sekiury <span>Legal</span>',pipeline:'📊 Pipeline <span>de Ventas</span>'};
+  const titles = {dashboard:'Panel <span>Principal</span>',clientes:'<span>Clientes</span>',polizas:'<span>Pólizas</span>',cobros:'<span>Cobros</span>',recibos:'Recibos y <span>Cuadre de Caja</span>',tareas:'<span>Tareas</span>',siniestros:'<span>Siniestros</span>',whatsapp:'Bandeja <span>WhatsApp</span>',informes:'<span>Informes</span>',archivos:'<span>Archivos</span>',comisiones:'<span>Comisiones</span>',config:'<span>Configuración</span>','motor-ia':'🧠 Motor <span>IA</span>',legal:'Sekiury <span>Legal</span>',pipeline:'📊 Pipeline <span>de Ventas</span>'};
   document.getElementById('topbar-title').innerHTML = titles[page] || page;
   cerrarDetalle();
   if (page === 'informes') setTimeout(() => renderInformes(), 50);
@@ -2967,6 +2994,7 @@ function navTo(page, el) {
   if (page === 'config') setTimeout(() => { initConfig(); setCfgTab('aseg'); }, 50);
   if (page === 'legal') setTimeout(() => { setLegalTab('casos'); renderLegalKpis(); }, 50);
   if (page === 'motor-ia') setTimeout(() => initMotorIA(), 150);
+  if (page === 'whatsapp') setTimeout(() => cargarBandejaWhatsApp(), 50);
 }
 
 function toggleCol() {
@@ -4727,6 +4755,123 @@ async function cargarCobrosDesdeSupabase() {
     showToast('No se pudo sincronizar cobros con Supabase — mostrando datos locales', 'err');
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BANDEJA WHATSAPP
+// ══════════════════════════════════════════════════════════════════════════════
+let WA_CONVERSACIONES = []; // agrupadas por teléfono
+let WA_TELEFONO_ACTIVO = null;
+let WA_CLIENTE_ACTIVO = null;
+
+async function cargarBandejaWhatsApp() {
+  try {
+    const { data, error } = await sb.from('whatsapp_mensajes').select('*').order('created_at', { ascending: false }).limit(500);
+    if (error) { console.error('Error cargando WhatsApp:', error.message); return; }
+
+    const porTelefono = {};
+    (data || []).forEach(m => {
+      if (!porTelefono[m.telefono]) porTelefono[m.telefono] = [];
+      porTelefono[m.telefono].push(m);
+    });
+
+    WA_CONVERSACIONES = Object.keys(porTelefono).map(tel => {
+      const msgs = porTelefono[tel].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      const ultimo = msgs[msgs.length - 1];
+      const noLeidos = msgs.filter(m => m.direccion === 'entrante' && !m.leido).length;
+      const cliente = clientes.find(c => c._id === ultimo.cliente_id);
+      return {
+        telefono: tel,
+        cliente_id: ultimo.cliente_id,
+        nombre: cliente ? `${cliente.nombre} ${cliente.apellidos||''}`.trim() : (ultimo.nombre_perfil || tel),
+        ultimo_mensaje: ultimo.cuerpo || '(sin texto)',
+        ultima_fecha: ultimo.created_at,
+        no_leidos: noLeidos,
+        mensajes: msgs,
+      };
+    }).sort((a,b) => new Date(b.ultima_fecha) - new Date(a.ultima_fecha));
+
+    renderListaConversaciones();
+    const totalNoLeidos = WA_CONVERSACIONES.reduce((s,c) => s + c.no_leidos, 0);
+    const badge = document.getElementById('nav-wa-badge');
+    if (badge) { badge.style.display = totalNoLeidos > 0 ? 'inline-block' : 'none'; badge.textContent = totalNoLeidos; }
+  } catch (e) {
+    console.error('Error de red cargando WhatsApp:', e);
+  }
+}
+
+function renderListaConversaciones() {
+  const cont = document.getElementById('wa-lista-conversaciones');
+  if (!cont) return;
+  if (!WA_CONVERSACIONES.length) {
+    cont.innerHTML = '<div style="padding:20px;color:var(--t3);font-size:13px;text-align:center;">Aún no hay conversaciones</div>';
+    return;
+  }
+  cont.innerHTML = WA_CONVERSACIONES.map(c => `
+    <div onclick="abrirConversacionWhatsApp('${c.telefono}')"
+      style="padding:10px 12px;border-radius:8px;cursor:pointer;margin-bottom:4px;${c.telefono===WA_TELEFONO_ACTIVO?'background:var(--bg3);':''}"
+      onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background='${c.telefono===WA_TELEFONO_ACTIVO?'var(--bg3)':'transparent'}'">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <strong style="color:var(--t1);font-size:13px;">${c.nombre}</strong>
+        ${c.no_leidos > 0 ? `<span style="background:#e74c3c;color:#fff;font-size:10px;border-radius:10px;padding:1px 6px;">${c.no_leidos}</span>` : ''}
+      </div>
+      <div style="color:var(--t3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.ultimo_mensaje}</div>
+    </div>`).join('');
+}
+
+async function abrirConversacionWhatsApp(telefono) {
+  WA_TELEFONO_ACTIVO = telefono;
+  const conv = WA_CONVERSACIONES.find(c => c.telefono === telefono);
+  if (!conv) return;
+  WA_CLIENTE_ACTIVO = conv.cliente_id;
+
+  document.getElementById('wa-hilo-header').textContent = conv.nombre + ' · ' + telefono;
+  document.getElementById('wa-hilo-mensajes').innerHTML = conv.mensajes.map(m => `
+    <div style="align-self:${m.direccion==='saliente'?'flex-end':'flex-start'};max-width:70%;background:${m.direccion==='saliente'?'var(--bg4)':'var(--bg3)'};padding:8px 12px;border-radius:10px;">
+      <div style="color:var(--t1);font-size:13px;white-space:pre-wrap;">${(m.cuerpo||'').replace(/</g,'&lt;')}</div>
+      <div style="color:var(--t3);font-size:10px;margin-top:4px;text-align:right;">${new Date(m.created_at).toLocaleString('es-CO',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`).join('');
+
+  const cont = document.getElementById('wa-hilo-mensajes');
+  cont.scrollTop = cont.scrollHeight;
+
+  // Marcar como leídos
+  const idsNoLeidos = conv.mensajes.filter(m => m.direccion==='entrante' && !m.leido).map(m => m.id);
+  if (idsNoLeidos.length) {
+    await sb.from('whatsapp_mensajes').update({ leido: true }).in('id', idsNoLeidos);
+    conv.mensajes.forEach(m => { if (idsNoLeidos.includes(m.id)) m.leido = true; });
+    conv.no_leidos = 0;
+    renderListaConversaciones();
+  }
+
+  // Verificar ventana de 24h para habilitar/deshabilitar la respuesta libre
+  const ultimoEntrante = [...conv.mensajes].reverse().find(m => m.direccion === 'entrante');
+  const dentro24h = ultimoEntrante && (Date.now() - new Date(ultimoEntrante.created_at).getTime()) < 24*3600*1000;
+  document.getElementById('wa-hilo-input').style.display = dentro24h ? 'flex' : 'none';
+  document.getElementById('wa-hilo-bloqueado').style.display = dentro24h ? 'none' : 'block';
+}
+
+async function enviarRespuestaWhatsApp() {
+  const input = document.getElementById('wa-input-mensaje');
+  const mensaje = input.value.trim();
+  if (!mensaje || !WA_TELEFONO_ACTIVO) return;
+
+  try {
+    const { data: sesion } = await sb.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/responder-whatsapp`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + sesion.session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telefono: WA_TELEFONO_ACTIVO, cliente_id: WA_CLIENTE_ACTIVO, mensaje }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al enviar');
+    input.value = '';
+    await cargarBandejaWhatsApp();
+    await abrirConversacionWhatsApp(WA_TELEFONO_ACTIVO);
+    showToast('Mensaje enviado');
+  } catch (e) {
+    showToast('Error: ' + e.message, 'err');
+  }
+}
 let filtrados_c = [...cobros];
 let importDataCobros = [];
 
@@ -5826,14 +5971,16 @@ async function guardarPoliza() {
   if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
 
   try {
+    let polizaIdGuardada = editandoPolizaId;
     if (editandoPolizaId) {
       const { error } = await sb.from('polizas').update(payload).eq('id', editandoPolizaId);
       if (error) throw error;
       showToast('Poliza actualizada');
     } else {
       payload.agente_id = SESION_ACTUAL?.agente_id || null;
-      const { error } = await sb.from('polizas').insert(payload);
+      const { data: nueva, error } = await sb.from('polizas').insert(payload).select('id').single();
       if (error) throw error;
+      polizaIdGuardada = nueva.id;
       showToast('Poliza creada');
     }
     await cargarPolizasDesdeSupabase();
@@ -5841,6 +5988,16 @@ async function guardarPoliza() {
     actualizarDashboard();
     cerrarModal('modal-poliza');
     setTimeout(() => sincronizarTareasAutomaticas(), 300);
+
+    // Mensaje de confirmación por WhatsApp — "golpe de credibilidad" apenas queda activa/renovada la póliza
+    if (polizaIdGuardada) {
+      const esNueva = (data.nueva_renovada || 'Nueva') !== 'Renovada';
+      fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + (await sb.auth.getSession()).data.session.access_token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modo: 'poliza_evento', poliza_id: polizaIdGuardada, es_nueva: esNueva }),
+      }).catch(e => console.warn('No se pudo enviar el WhatsApp de confirmación:', e));
+    }
   } catch (e) {
     console.error('Error guardando póliza en Supabase:', e);
     showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
@@ -9091,7 +9248,11 @@ function aplicarSesion(usuario) {
     .then(() => cargarPolizasDesdeSupabase())
     .then(() => cargarSiniestrosDesdeSupabase())
     .then(() => cargarTareasDesdeSupabase())
-    .then(() => cargarCobrosDesdeSupabase());
+    .then(() => cargarCobrosDesdeSupabase())
+    .then(() => cargarBandejaWhatsApp());
+
+  // Revisar mensajes nuevos de WhatsApp cada 60 segundos (actualiza el contador del menú)
+  setInterval(() => cargarBandejaWhatsApp(), 60000);
 }
 
 async function verificarSesion() {
