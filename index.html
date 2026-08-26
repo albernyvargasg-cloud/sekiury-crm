@@ -9290,6 +9290,10 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--t1', '#0A1628');
     document.documentElement.style.setProperty('--t2', '#2F4D8A');
     document.documentElement.style.setProperty('--t3', '#7AA0C4');
+    // Colores de acento (cifras, KPIs) — versiones oscurecidas para buen contraste sobre fondo claro.
+    // El turquesa/celeste clarito original fue pensado para fondo oscuro; sobre blanco se ve lavado.
+    document.documentElement.style.setProperty('--turq', '#0A7355'); // verde-turquesa corporativo, contraste 5.8:1 sobre blanco
+    document.documentElement.style.setProperty('--ciel', '#1D6FB8'); // azul corporativo, legible en blanco
   }
 
   // Sesión confirmada — sincronizar Clientes, Pólizas, Siniestros, Tareas y Cobros con Supabase
