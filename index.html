@@ -1150,7 +1150,13 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div id="inf-oportunidades" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;"></div>
     <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;overflow:hidden;">
       <div class="table-top-line"></div>
-      <div style="padding:16px 20px;font-size:14px;font-weight:800;">Renovaciones Próximas 90 días</div>
+      <div style="padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div style="font-size:14px;font-weight:800;">Renovaciones <span id="inf-renov-titulo">Próximas 90 días</span></div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="cambiarModoRenovaciones('90dias')" id="btn-renov-90" class="btn-toggle-renov" style="padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--bdr);background:var(--ciel);color:#0a1628;">Próximas 90 días</button>
+          <button onclick="cambiarModoRenovaciones('mesActual')" id="btn-renov-mes" class="btn-toggle-renov" style="padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--bdr);background:transparent;color:var(--t2);">Mes actual (completo)</button>
+        </div>
+      </div>
       <div id="inf-tabla-renovaciones"></div>
     </div>
   </div>
@@ -7503,13 +7509,24 @@ function renderInfProyeccion(ps) {
       </div>
     </div>`;
 
-  // Renovaciones próximas 90 días
-  const en90 = new Date(hoy); en90.setDate(en90.getDate()+90);
-  const renovaciones = vigentes.filter(p => {
-    if (!p.fecha_fin) return false;
-    const f = new Date(p.fecha_fin);
-    return f >= hoy && f <= en90;
-  }).sort((a,b) => new Date(a.fecha_fin)-new Date(b.fecha_fin));
+  // Renovaciones: dos modos — "Próximas 90 días" (rolling, solo futuro) o "Mes actual completo" (todo el mes calendario)
+  let renovaciones;
+  if (_modoRenovaciones === 'mesActual') {
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    renovaciones = vigentes.filter(p => {
+      if (!p.fecha_fin) return false;
+      const f = parseFechaLocal(p.fecha_fin);
+      return f && f >= inicioMes && f <= finMes;
+    }).sort((a,b) => new Date(a.fecha_fin)-new Date(b.fecha_fin));
+  } else {
+    const en90 = new Date(hoy); en90.setDate(en90.getDate()+90);
+    renovaciones = vigentes.filter(p => {
+      if (!p.fecha_fin) return false;
+      const f = new Date(p.fecha_fin);
+      return f >= hoy && f <= en90;
+    }).sort((a,b) => new Date(a.fecha_fin)-new Date(b.fecha_fin));
+  }
 
   const tbEl = document.getElementById('inf-tabla-renovaciones');
   if (tbEl) {
@@ -7527,18 +7544,38 @@ function renderInfProyeccion(ps) {
         </tr></thead>
         <tbody>${renovaciones.map(p=>{
           const dias = Math.ceil((new Date(p.fecha_fin)-hoy)/(1000*60*60*24));
-          const color = dias<=15?'var(--err)':dias<=30?'var(--warn)':'var(--ok)';
+          const yaVencio = dias < 0;
+          const color = yaVencio?'var(--err)':dias<=15?'var(--err)':dias<=30?'var(--warn)':'var(--ok)';
+          const etiquetaDias = yaVencio ? `Venció hace ${Math.abs(dias)}d` : `${dias}d`;
           return `<tr style="border-bottom:1px solid var(--bdr2);" onmouseenter="this.style.background='rgba(47,77,138,.08)'" onmouseleave="this.style.background='transparent'">
             <td style="padding:10px 16px;color:var(--t1);font-weight:700;">${p.nombres_cliente||''} ${p.apellidos_cliente||''}</td>
             <td style="padding:10px 16px;color:var(--ciel);">${p.numero_poliza||'—'}</td>
             <td style="padding:10px 16px;color:var(--t2);">${(p.aseguradora||'').substring(0,22)} / ${p.ramo||''}</td>
             <td style="padding:10px 16px;text-align:right;color:var(--turq);font-weight:700;">${infFmt(p.prima_neta)}</td>
             <td style="padding:10px 16px;text-align:center;color:var(--t2);">${p.fecha_fin}</td>
-            <td style="padding:10px 16px;text-align:center;"><span style="padding:3px 10px;border-radius:20px;font-size:10px;font-weight:900;background:${color}22;color:${color};">${dias}d</span></td>
+            <td style="padding:10px 16px;text-align:center;"><span style="padding:3px 10px;border-radius:20px;font-size:10px;font-weight:900;background:${color}22;color:${color};">${etiquetaDias}</span></td>
           </tr>`;
         }).join('')}</tbody></table></div>`;
     }
   }
+}
+
+let _modoRenovaciones = '90dias';
+function cambiarModoRenovaciones(modo) {
+  _modoRenovaciones = modo;
+  const btn90 = document.getElementById('btn-renov-90');
+  const btnMes = document.getElementById('btn-renov-mes');
+  const titulo = document.getElementById('inf-renov-titulo');
+  if (modo === 'mesActual') {
+    if (btnMes) { btnMes.style.background = 'var(--ciel)'; btnMes.style.color = '#0a1628'; }
+    if (btn90) { btn90.style.background = 'transparent'; btn90.style.color = 'var(--t2)'; }
+    if (titulo) titulo.textContent = 'del mes actual (completo)';
+  } else {
+    if (btn90) { btn90.style.background = 'var(--ciel)'; btn90.style.color = '#0a1628'; }
+    if (btnMes) { btnMes.style.background = 'transparent'; btnMes.style.color = 'var(--t2)'; }
+    if (titulo) titulo.textContent = 'Próximas 90 días';
+  }
+  renderInformes();
 }
 
 // ── EXPORTAR ──────────────────────────────────────────────────────────────────
