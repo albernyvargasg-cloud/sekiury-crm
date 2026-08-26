@@ -3025,6 +3025,18 @@ function ini(c) {
 function colorIdx(id) { return COLORES[Math.abs(String(id).split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % COLORES.length]; }
 function guardarLS() { localStorage.setItem('sekiury_clientes', JSON.stringify(clientes)); }
 function genId() { return Date.now() + Math.random().toString(36).slice(2,7); }
+
+// Corrige el bug de zona horaria: new Date("YYYY-MM-DD") interpreta la fecha como
+// medianoche UTC, lo que en Colombia (UTC-5) la corre un día hacia atrás.
+// Esta función arma la fecha en hora LOCAL, sin ese corrimiento.
+function parseFechaLocal(fechaStr) {
+  if (!fechaStr) return null;
+  const partes = String(fechaStr).split('-');
+  if (partes.length !== 3) return null;
+  const [y, m, d] = partes.map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d); // mes es 0-indexado en JS
+}
 function showToast(msg, tipo='ok') {
   const t = document.getElementById('toast');
   t.textContent = tipo==='ok' ? '✅ ' + msg : '❌ ' + msg;
@@ -6804,14 +6816,14 @@ function renderCumpleanos() {
   const cumples = clientes.filter(c => {
     if (!c.fecha_nacimiento) return false;
     try {
-      const fn = new Date(c.fecha_nacimiento);
-      if (isNaN(fn)) return false;
+      const fn = parseFechaLocal(c.fecha_nacimiento);
+      if (!fn || isNaN(fn)) return false;
       const fnEste = new Date(hoy.getFullYear(), fn.getMonth(), fn.getDate());
       const diff = Math.round((fnEste - new Date(hoy.getFullYear(), mes, dia)) / 86400000);
       return diff >= 0 && diff <= 30;
     } catch(e) { return false; }
   }).map(c => {
-    const fn = new Date(c.fecha_nacimiento);
+    const fn = parseFechaLocal(c.fecha_nacimiento);
     const fnEste = new Date(hoy.getFullYear(), fn.getMonth(), fn.getDate());
     const diff = Math.round((fnEste - new Date(hoy.getFullYear(), mes, dia)) / 86400000);
     const edad = hoy.getFullYear() - fn.getFullYear();
@@ -9681,7 +9693,7 @@ function getAnthropicKey() { return localStorage.getItem('sekiury_api_key') || '
 
 function calcularEstadoPoliza(p){if(!p.fecha_fin)return p.estado||'vigente';const hoy=new Date();hoy.setHours(0,0,0,0);const fin=new Date(p.fecha_fin);fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d<0)return'vencida';if(d<=31)return'por renovar';return'vigente';}
 
-function calcularScoreCliente(c){let s=0;const doc=c.numero_documento||'';const pol=iaGetPolizas().filter(p=>p.cedula_cliente===doc);const activas=pol.filter(p=>calcularEstadoPoliza(p)==='vigente');s+=Math.min(activas.length*15,30);const total=pol.reduce((a,p)=>a+(parseFloat(p.prima_neta)||0),0);if(total>10000000)s+=20;else if(total>5000000)s+=12;else if(total>1000000)s+=6;const ramos=[...new Set(pol.map(p=>p.ramo).filter(Boolean))];s+=Math.min(ramos.length*5,15);const renov=pol.filter(p=>{if(!p.fecha_fin)return false;const d=Math.floor((new Date(p.fecha_fin)-new Date())/86400000);return d>=0&&d<=60;});s+=Math.min(renov.length*10,15);if(c.email)s+=5;if(c.celular)s+=5;if(c.fecha_nacimiento){const hoy=new Date();const nac=new Date(c.fecha_nacimiento);const cu=new Date(hoy.getFullYear(),nac.getMonth(),nac.getDate());const d=Math.floor((cu-hoy)/86400000);if(d>=0&&d<=30)s+=5;}return Math.min(s,100);}
+function calcularScoreCliente(c){let s=0;const doc=c.numero_documento||'';const pol=iaGetPolizas().filter(p=>p.cedula_cliente===doc);const activas=pol.filter(p=>calcularEstadoPoliza(p)==='vigente');s+=Math.min(activas.length*15,30);const total=pol.reduce((a,p)=>a+(parseFloat(p.prima_neta)||0),0);if(total>10000000)s+=20;else if(total>5000000)s+=12;else if(total>1000000)s+=6;const ramos=[...new Set(pol.map(p=>p.ramo).filter(Boolean))];s+=Math.min(ramos.length*5,15);const renov=pol.filter(p=>{if(!p.fecha_fin)return false;const d=Math.floor((new Date(p.fecha_fin)-new Date())/86400000);return d>=0&&d<=60;});s+=Math.min(renov.length*10,15);if(c.email)s+=5;if(c.celular)s+=5;if(c.fecha_nacimiento){const hoy=new Date();const nac=parseFechaLocal(c.fecha_nacimiento);if(nac){const cu=new Date(hoy.getFullYear(),nac.getMonth(),nac.getDate());const d=Math.floor((cu-hoy)/86400000);if(d>=0&&d<=30)s+=5;}}return Math.min(s,100);}
 
 function getScoreClase(s){if(s>=80)return{label:'🔥 CALIENTE',badge:'ia-badge-hot',tag:'ia-tag-hot'};if(s>=50)return{label:'⚡ MEDIO',badge:'ia-badge-med',tag:'ia-tag-med'};return{label:'❄️ FRÍO',badge:'ia-badge-cold',tag:'ia-tag-cold'};}
 
@@ -9693,7 +9705,7 @@ function renderScoring(){const con=document.getElementById('ia-scoring-list');if
 
 function renderCrossSellIA(){const con=document.getElementById('ia-cross-list');if(!con)return;const _c=iaGetClientes();const _p=iaGetPolizas();const S={'VIDA INDIVIDUAL':['SALUD','AUTOS/VEHÍCULOS'],'AUTOS/VEHÍCULOS':['VIDA INDIVIDUAL','RESPONSABILIDAD CIVIL'],'SALUD':['VIDA INDIVIDUAL','ACCIDENTES PERSONALES']};const D=['VIDA INDIVIDUAL','SALUD','AUTOS/VEHÍCULOS'];const ops=_c.map(c=>{const pol=_p.filter(p=>p.cedula_cliente===c.numero_documento&&calcularEstadoPoliza(p)==='vigente');if(!pol.length||pol.length>=3)return null;const ramos=pol.map(p=>(p.ramo||'').toUpperCase());const sug=(S[ramos[0]]||D).filter(r=>!ramos.includes(r));if(!sug.length)return null;return{c,pol,sug,s:calcularScoreCliente(c)};}).filter(Boolean).sort((a,b)=>b.s-a.s).slice(0,15);if(!ops.length){con.innerHTML='<div style="text-align:center;padding:40px;color:var(--t3);">Sin oportunidades</div>';return;}con.innerHTML=ops.map(({c,pol,sug,s})=>{const nom=`${c.nombre||''} ${c.apellidos||''}`.trim()||'—';const{badge}=getScoreClase(s);return`<div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;padding:14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;"><div class="score-badge ${badge}">${s}</div><div style="flex:1;"><div style="font-size:13px;font-weight:700;color:var(--t1);">${nom}</div><div style="font-size:10px;color:var(--t2);">${pol.map(p=>p.ramo||'—').join(', ')}</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">${sug.slice(0,3).map(r=>`<span style="background:rgba(144,255,217,.08);border:1px solid rgba(144,255,217,.15);border-radius:20px;padding:2px 10px;font-size:9px;color:var(--turq);">+${r}</span>`).join('')}</div></div></div>`;}).join('');}
 
-function renderAlertasIA(){const con=document.getElementById('ia-alertas-list');if(!con)return;const _c=iaGetClientes();const _p=iaGetPolizas();const al=[];const hoy=new Date();hoy.setHours(0,0,0,0);_p.forEach(p=>{if(!p.fecha_fin)return;const fin=new Date(p.fecha_fin);fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d>=0&&d<=7)al.push({color:'var(--err)',titulo:`🚨 ${p.nombres_cliente||''} ${p.apellidos_cliente||''} — ${p.ramo||''}`,desc:`Vence en ${d} día(s)`});});_c.filter(c=>!_p.some(p=>p.cedula_cliente===c.numero_documento)).slice(0,5).forEach(c=>{al.push({color:'var(--turq)',titulo:`💡 ${c.nombre||''} ${c.apellidos||''} — Sin pólizas`,desc:`${c.ciudad||'—'}`});});_c.forEach(c=>{if(!c.fecha_nacimiento)return;const nac=new Date(c.fecha_nacimiento);const cu=new Date(hoy.getFullYear(),nac.getMonth(),nac.getDate());const d=Math.floor((cu-hoy)/86400000);if(d>=0&&d<=7)al.push({color:'var(--warn)',titulo:`🎂 ${c.nombre||''} ${c.apellidos||''} — Cumpleaños en ${d} día(s)`,desc:`Cel: ${c.celular||'—'}`});});if(!al.length){con.innerHTML='<div style="text-align:center;padding:40px;color:var(--t3);">🎉 Sin alertas</div>';return;}con.innerHTML=al.map(a=>`<div style="border-left:3px solid ${a.color};background:var(--bg2);border-radius:0 12px 12px 0;padding:12px 16px;margin-bottom:8px;"><div style="font-size:12px;font-weight:700;color:var(--t1);">${a.titulo}</div><div style="font-size:10px;color:var(--t2);margin-top:2px;">${a.desc}</div></div>`).join('');}
+function renderAlertasIA(){const con=document.getElementById('ia-alertas-list');if(!con)return;const _c=iaGetClientes();const _p=iaGetPolizas();const al=[];const hoy=new Date();hoy.setHours(0,0,0,0);_p.forEach(p=>{if(!p.fecha_fin)return;const fin=new Date(p.fecha_fin);fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d>=0&&d<=7)al.push({color:'var(--err)',titulo:`🚨 ${p.nombres_cliente||''} ${p.apellidos_cliente||''} — ${p.ramo||''}`,desc:`Vence en ${d} día(s)`});});_c.filter(c=>!_p.some(p=>p.cedula_cliente===c.numero_documento)).slice(0,5).forEach(c=>{al.push({color:'var(--turq)',titulo:`💡 ${c.nombre||''} ${c.apellidos||''} — Sin pólizas`,desc:`${c.ciudad||'—'}`});});_c.forEach(c=>{if(!c.fecha_nacimiento)return;const nac=parseFechaLocal(c.fecha_nacimiento);if(!nac)return;const cu=new Date(hoy.getFullYear(),nac.getMonth(),nac.getDate());const d=Math.floor((cu-hoy)/86400000);if(d>=0&&d<=7)al.push({color:'var(--warn)',titulo:`🎂 ${c.nombre||''} ${c.apellidos||''} — Cumpleaños en ${d} día(s)`,desc:`Cel: ${c.celular||'—'}`});});if(!al.length){con.innerHTML='<div style="text-align:center;padding:40px;color:var(--t3);">🎉 Sin alertas</div>';return;}con.innerHTML=al.map(a=>`<div style="border-left:3px solid ${a.color};background:var(--bg2);border-radius:0 12px 12px 0;padding:12px 16px;margin-bottom:8px;"><div style="font-size:12px;font-weight:700;color:var(--t1);">${a.titulo}</div><div style="font-size:10px;color:var(--t2);margin-top:2px;">${a.desc}</div></div>`).join('');}
 
 function iaTab(tab){['score','cross','alertas','asistente'].forEach(t=>{const p=document.getElementById('ia-panel-'+t);const b=document.getElementById('ia-tab-'+t);if(p)p.style.display=t===tab?'block':'none';if(b)b.className=t===tab?'btn btn-primary':'btn btn-outline';});if(tab==='score')renderScoring();if(tab==='cross')renderCrossSellIA();if(tab==='alertas')renderAlertasIA();if(tab==='asistente')cargarSelectClientesIA();}
 
