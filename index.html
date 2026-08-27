@@ -869,6 +869,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <option value="">Todos</option>
       <option value="vencidos">Solo vencidos</option>
       <option value="al-dia">Al día</option>
+      <option value="no-vigente">Póliza no vigente</option>
     </select>
     <span style="font-size:12px;color:var(--t3);margin-left:auto;" id="cresult-count"></span>
   </div>
@@ -4743,6 +4744,7 @@ function mapCobroDesdeSupabase(row) {
     numero_poliza: poliza ? poliza.numero_poliza : '',
     aseguradora: poliza ? poliza.aseguradora : '',
     ramo: poliza ? poliza.ramo : '',
+    poliza_estado: poliza ? poliza.estado : '',
     nombre_cliente: cliente ? `${cliente.nombre} ${cliente.apellidos||''}`.trim() : '',
     documento_cliente: cliente ? cliente.numero_documento : '',
     vendedor: getAgenteNombre(row.agente_id) || '',
@@ -5040,7 +5042,8 @@ function filtrarCobros() {
   filtrados_c = cobros.filter(c => {
     const txt = `${c.nombre_cliente||''} ${c.numero_poliza||''} ${c.aseguradora||''} ${c.documento_cliente||''}`.toLowerCase();
     const dias = parseFloat(c.dias_vencidos||0);
-    const matchV = !venc || (venc==='vencidos' ? dias>0 : dias<=0);
+    const noVigente = c.poliza_estado && c.poliza_estado !== 'Vigente';
+    const matchV = !venc || (venc==='vencidos' ? dias>0 : venc==='al-dia' ? dias<=0 : venc==='no-vigente' ? noVigente : true);
     return (!q || txt.includes(q)) && (!aseg || c.aseguradora===aseg) && (!vend || c.vendedor===vend) && matchV;
   });
   renderCobros();
@@ -5060,8 +5063,18 @@ function renderCobros() {
     const dias = parseFloat(c.dias_vencidos||0);
     const diasColor = dias > 30 ? 'var(--err)' : dias > 0 ? 'var(--warn)' : 'var(--ok)';
     const saldo = parseFloat(String(c.saldo_oficina||0).replace(/[^0-9.-]/g,''))||0;
+    const noVigente = c.poliza_estado && c.poliza_estado !== 'Vigente';
+    const botonRecordar = noVigente
+      ? `<button disabled title="La póliza ya no está vigente (${c.poliza_estado}) — revisa antes de contactar al cliente"
+          style="background:rgba(122,160,196,.12);border:1px solid var(--bdr);border-radius:8px;padding:5px 10px;color:var(--t3);font-size:11px;font-weight:700;cursor:not-allowed;white-space:nowrap;">
+          🚫 No vigente
+        </button>`
+      : `<button id="btn-recordatorio-${c._id}" onclick="event.stopPropagation();enviarRecordatorioCobro('${c._id}')"
+          style="background:rgba(10,115,85,.12);border:1px solid rgba(10,115,85,.3);border-radius:8px;padding:5px 10px;color:var(--turq);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">
+          📨 Recordar
+        </button>`;
     return `
-    <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr 110px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;transition:background .15s;"
+    <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr 110px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;transition:background .15s;${noVigente?'opacity:.7;':''}"
       onmouseenter="this.style.background='rgba(47,77,138,.1)'"
       onmouseleave="this.style.background='transparent'">
       <div>
@@ -5069,7 +5082,7 @@ function renderCobros() {
         <div style="font-size:11px;color:var(--t3);">${c.documento_cliente||''} · ${c.vendedor||''}</div>
       </div>
       <div>
-        <div style="font-size:12px;font-weight:700;color:var(--ciel);">${c.numero_poliza||'—'}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--ciel);">${c.numero_poliza||'—'} ${noVigente?`<span style="background:rgba(239,68,68,.15);color:var(--err);font-size:9px;font-weight:900;padding:2px 6px;border-radius:10px;margin-left:4px;">${c.poliza_estado}</span>`:''}</div>
         <div style="font-size:10px;color:var(--t3);">${c.ramo||''}</div>
       </div>
       <div style="font-size:12px;color:var(--t1);">${c.aseguradora||'—'}</div>
@@ -5080,12 +5093,7 @@ function renderCobros() {
       <div style="font-size:12px;font-weight:700;color:${saldo>0?'var(--warn)':'var(--ok)'};">${fmtMoneda(saldo)}</div>
       <div style="font-size:11px;color:var(--t2);">${fmtFecha(c.fecha_limite)}</div>
       <div style="font-size:13px;font-weight:900;color:${diasColor};">${dias > 0 ? dias + 'd' : '✓'}</div>
-      <div>
-        <button id="btn-recordatorio-${c._id}" onclick="event.stopPropagation();enviarRecordatorioCobro('${c._id}')"
-          style="background:rgba(10,115,85,.12);border:1px solid rgba(10,115,85,.3);border-radius:8px;padding:5px 10px;color:var(--turq);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">
-          📨 Recordar
-        </button>
-      </div>
+      <div>${botonRecordar}</div>
     </div>`;
   }).join('');
 }
