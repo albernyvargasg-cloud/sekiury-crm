@@ -841,6 +841,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <p>Gestión de cartera y recaudo</p>
     </div>
     <div style="display:flex;gap:8px;">
+      <button id="btn-generar-cobros" class="btn btn-primary" onclick="generarCobrosDesdePolizas()">🔄 Generar cobros desde pólizas</button>
       <button class="btn btn-success" onclick="abrirImportCobros()">📥 Importar Excel</button>
       <button class="btn btn-outline" onclick="exportarCobros()">📤 Exportar</button>
     </div>
@@ -4775,6 +4776,81 @@ async function cargarCobrosDesdeSupabase() {
   }
 }
 
+// Calcula las fechas de cada cuota repartidas uniformemente entre el inicio y el fin de vigencia
+function calcularFechasCuotas(fechaInicio, fechaFin, numCuotas) {
+  const dInicio = new Date(fechaInicio + 'T00:00:00');
+  const dFin = new Date(fechaFin + 'T00:00:00');
+  const totalDias = Math.max(1, Math.round((dFin - dInicio) / 86400000));
+  const intervalo = totalDias / numCuotas;
+  const fechas = [];
+  for (let i = 0; i < numCuotas; i++) {
+    const f = new Date(dInicio.getTime() + Math.round(i * intervalo) * 86400000);
+    fechas.push(f.toISOString().slice(0, 10));
+  }
+  return fechas;
+}
+
+// Genera automáticamente el cronograma de cobros de todas las pólizas que aún no lo tengan,
+// usando prima_total, periodicidad y vigencia — sin depender de importar ningún Excel.
+async function generarCobrosDesdePolizas() {
+  const btn = document.getElementById('btn-generar-cobros');
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
+
+  try {
+    const { data: polizasDb, error: errP } = await sb.from('polizas')
+      .select('id, cliente_id, agente_id, prima_total, periodicidad, vigencia_inicio, vigencia_fin')
+      .neq('estado', 'Cancelada');
+    if (errP) throw errP;
+
+    const { data: cobrosExistentes, error: errC } = await sb.from('cobros').select('poliza_id');
+    if (errC) throw errC;
+    const polizasConCobros = new Set((cobrosExistentes || []).map(c => c.poliza_id));
+
+    const cuotasPorPeriodicidad = { 'Anual':1, 'Semestral':2, 'Trimestral':4, 'Mensual':12, 'Contado':1 };
+    const hoy = new Date().toISOString().slice(0, 10);
+    const nuevosRegistros = [];
+    let omitidasSinCobros = 0, omitidasSinDatos = 0;
+
+    for (const p of polizasDb || []) {
+      if (polizasConCobros.has(p.id)) { continue; } // ya tiene cronograma, no duplicar
+      if (!p.vigencia_inicio || !p.vigencia_fin || !p.prima_total || !p.cliente_id) { omitidasSinDatos++; continue; }
+
+      const numCuotas = cuotasPorPeriodicidad[p.periodicidad] || 1;
+      const valorCuota = Math.round(p.prima_total / numCuotas);
+      const fechas = calcularFechasCuotas(p.vigencia_inicio, p.vigencia_fin, numCuotas);
+
+      fechas.forEach((fecha, idx) => {
+        nuevosRegistros.push({
+          poliza_id: p.id, cliente_id: p.cliente_id, tipo: 'Prima Cliente',
+          num_cuota: idx + 1, valor_cuota: valorCuota,
+          fecha_vence: fecha, estado: fecha < hoy ? 'Vencida' : 'Pendiente',
+          agente_id: p.agente_id || null,
+        });
+      });
+      omitidasSinCobros++; // contador reutilizado como "pólizas procesadas"
+    }
+
+    if (nuevosRegistros.length > 0) {
+      // Insertar en lotes de 200 para no exceder límites de la API
+      for (let i = 0; i < nuevosRegistros.length; i += 200) {
+        const lote = nuevosRegistros.slice(i, i + 200);
+        const { error: errIns } = await sb.from('cobros').insert(lote);
+        if (errIns) throw errIns;
+      }
+    }
+
+    await cargarCobrosDesdeSupabase();
+    actualizarStatsCobros();
+    showToast(`✅ ${nuevosRegistros.length} cobros generados de ${omitidasSinCobros} pólizas${omitidasSinDatos ? ` (${omitidasSinDatos} omitidas por datos incompletos)` : ''}`);
+  } catch (e) {
+    console.error('Error generando cobros desde pólizas:', e);
+    showToast('Error al generar cobros: ' + (e.message || ''), 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '🔄 Generar cobros desde pólizas'; }
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // BANDEJA WHATSAPP
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5255,6 +5331,7 @@ function mapPolizaDesdeSupabase(row) {
 // Mapea el formato del formulario del CRM a las columnas reales de public.polizas
 function mapPolizaASupabase(data) {
   const estadoMap = { 'vigente':'Vigente', 'por renovar':'Por Renovar', 'vencida':'Vencida', 'cancelada':'Cancelada' };
+  const cuotasPorPeriodicidad = { 'Anual':1, 'Semestral':2, 'Trimestral':4, 'Mensual':12, 'Contado':1 };
   return {
     numero_poliza: data.numero_poliza || '',
     cliente_id: getClienteIdPorCedula(data.cedula_cliente),
@@ -5266,6 +5343,8 @@ function mapPolizaASupabase(data) {
     prima_total: parseFloat(data.total) || 0,
     prima_neta: parseFloat(data.prima_neta) || null,
     forma_pago: data.forma_pago || 'Contado',
+    periodicidad: data.periodicidad || 'Anual',
+    num_cuotas: cuotasPorPeriodicidad[data.periodicidad] || 1,
     estado: estadoMap[data.estado] || 'Vigente',
     observaciones: data.observaciones || null,
   };
