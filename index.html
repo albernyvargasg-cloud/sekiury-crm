@@ -874,7 +874,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
 
   <div class="table-wrap">
     <div class="table-top-line"></div>
-    <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr);">
+    <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr 110px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr);">
       <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">CLIENTE</div>
       <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">PÓLIZA</div>
       <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">ASEGURADORA</div>
@@ -883,6 +883,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">SALDO</div>
       <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">FECHA LÍMITE</div>
       <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">DÍAS VENC.</div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">RECORDAR</div>
     </div>
     <div id="tabla-cobros">
       <div class="empty-state">
@@ -4984,7 +4985,7 @@ function renderCobros() {
     const diasColor = dias > 30 ? 'var(--err)' : dias > 0 ? 'var(--warn)' : 'var(--ok)';
     const saldo = parseFloat(String(c.saldo_oficina||0).replace(/[^0-9.-]/g,''))||0;
     return `
-    <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;cursor:pointer;transition:background .15s;"
+    <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr 110px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;transition:background .15s;"
       onmouseenter="this.style.background='rgba(47,77,138,.1)'"
       onmouseleave="this.style.background='transparent'">
       <div>
@@ -5003,8 +5004,36 @@ function renderCobros() {
       <div style="font-size:12px;font-weight:700;color:${saldo>0?'var(--warn)':'var(--ok)'};">${fmtMoneda(saldo)}</div>
       <div style="font-size:11px;color:var(--t2);">${fmtFecha(c.fecha_limite)}</div>
       <div style="font-size:13px;font-weight:900;color:${diasColor};">${dias > 0 ? dias + 'd' : '✓'}</div>
+      <div>
+        <button id="btn-recordatorio-${c._id}" onclick="event.stopPropagation();enviarRecordatorioCobro('${c._id}')"
+          style="background:rgba(10,115,85,.12);border:1px solid rgba(10,115,85,.3);border-radius:8px;padding:5px 10px;color:var(--turq);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">
+          📨 Recordar
+        </button>
+      </div>
     </div>`;
   }).join('');
+}
+
+// Envío manual de recordatorio de cobro por WhatsApp — botón "📨 Recordar" en Cobros
+async function enviarRecordatorioCobro(cobroId) {
+  const btn = document.getElementById('btn-recordatorio-'+cobroId);
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+  try {
+    const { data: sesion } = await sb.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + sesion.session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modo: 'cobro_manual', cobro_id: cobroId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al enviar');
+    showToast('Recordatorio enviado por WhatsApp');
+  } catch (e) {
+    showToast('Error al enviar: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '📨 Recordar'; }
+  }
 }
 
 function abrirImportCobros() {
