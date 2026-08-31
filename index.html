@@ -749,6 +749,21 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <select class="btn btn-outline" style="font-family:Nunito,sans-serif;cursor:pointer;" id="filtro-aseguradora" onchange="filtrarPolizas()">
       <option value="">Todas las aseguradoras</option>
     </select>
+    <select class="btn btn-outline" style="font-family:Nunito,sans-serif;cursor:pointer;" id="filtro-mes-venc" onchange="filtrarPolizas()">
+      <option value="">Mes de vencimiento</option>
+      <option value="01">Enero</option>
+      <option value="02">Febrero</option>
+      <option value="03">Marzo</option>
+      <option value="04">Abril</option>
+      <option value="05">Mayo</option>
+      <option value="06">Junio</option>
+      <option value="07">Julio</option>
+      <option value="08">Agosto</option>
+      <option value="09">Septiembre</option>
+      <option value="10">Octubre</option>
+      <option value="11">Noviembre</option>
+      <option value="12">Diciembre</option>
+    </select>
     <span style="font-size:12px;color:var(--t3);margin-left:auto;" id="presult-count"></span>
   </div>
 
@@ -5336,7 +5351,7 @@ function getClienteIdPorCedula(cedula) {
 function mapPolizaDesdeSupabase(row) {
   const estadoMap = { 'Vigente':'vigente', 'Por Renovar':'por renovar', 'Vencida':'vencida', 'Cancelada':'cancelada', 'Cotización':'vigente', 'Expedición':'vigente' };
   const cliente = clientes.find(c => c._id === row.cliente_id);
-  return {
+  const p = {
     _id: row.id,
     numero_poliza: row.numero_poliza || '',
     estado: estadoMap[row.estado] || 'vigente',
@@ -5356,6 +5371,11 @@ function mapPolizaDesdeSupabase(row) {
     observaciones: row.observaciones || '',
     fecha_creacion: (row.created_at||'').slice(0,10),
   };
+  // El estado guardado en Supabase no se actualizaba solo con el paso del tiempo.
+  // Se recalcula aquí según la fecha real de vencimiento (Vigente/Por Renovar/Vencida),
+  // respetando 'cancelada' y 'renovada' como estados manuales.
+  p.estado = calcularEstadoPoliza(p);
+  return p;
 }
 
 // Mapea el formato del formulario del CRM a las columnas reales de public.polizas
@@ -5588,12 +5608,15 @@ function filtrarPolizas() {
   const est = document.getElementById('filtro-estado-poliza').value;
   const ramo = document.getElementById('filtro-ramo').value;
   const aseg = document.getElementById('filtro-aseguradora').value;
+  const mesVenc = document.getElementById('filtro-mes-venc')?.value || '';
   filtradas_p = polizas.filter(p => {
     const txt = `${p.numero_poliza||''} ${p.nombres_cliente||''} ${p.apellidos_cliente||''} ${p.aseguradora||''} ${p.cedula_cliente||''}`.toLowerCase();
+    const mesPoliza = (p.fecha_fin||'').slice(5,7);
     return (!q || txt.includes(q)) &&
            (!est || p.estado === est) &&
            (!ramo || p.ramo === ramo) &&
-           (!aseg || p.aseguradora === aseg);
+           (!aseg || p.aseguradora === aseg) &&
+           (!mesVenc || mesPoliza === mesVenc);
   });
   renderPolizas();
   document.getElementById('presult-count').textContent = filtradas_p.length + ' de ' + polizas.length + ' pólizas';
@@ -6282,7 +6305,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v45.5';
+const _CRM_VERSION = 'v45.6';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -9870,7 +9893,7 @@ function ocultarDropdownPK() { const l=document.getElementById('pk-dropdown'); i
 // 🔑 API Key Anthropic — Se lee desde localStorage (configurar en ⚙️ Configuración → API Key)
 function getAnthropicKey() { return localStorage.getItem('sekiury_api_key') || ''; }
 
-function calcularEstadoPoliza(p){if(!p.fecha_fin)return p.estado||'vigente';const hoy=new Date();hoy.setHours(0,0,0,0);const fin=new Date(p.fecha_fin);fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d<0)return'vencida';if(d<=31)return'por renovar';return'vigente';}
+function calcularEstadoPoliza(p){if(p.estado==='cancelada'||p.estado==='renovada')return p.estado;if(!p.fecha_fin)return p.estado||'vigente';const hoy=new Date();hoy.setHours(0,0,0,0);const fin=parseFechaLocal(p.fecha_fin);if(!fin)return p.estado||'vigente';fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d<0)return'vencida';if(d<=31)return'por renovar';return'vigente';}
 
 function calcularScoreCliente(c){let s=0;const doc=c.numero_documento||'';const pol=iaGetPolizas().filter(p=>p.cedula_cliente===doc);const activas=pol.filter(p=>calcularEstadoPoliza(p)==='vigente');s+=Math.min(activas.length*15,30);const total=pol.reduce((a,p)=>a+(parseFloat(p.prima_neta)||0),0);if(total>10000000)s+=20;else if(total>5000000)s+=12;else if(total>1000000)s+=6;const ramos=[...new Set(pol.map(p=>p.ramo).filter(Boolean))];s+=Math.min(ramos.length*5,15);const renov=pol.filter(p=>{if(!p.fecha_fin)return false;const d=Math.floor((new Date(p.fecha_fin)-new Date())/86400000);return d>=0&&d<=60;});s+=Math.min(renov.length*10,15);if(c.email)s+=5;if(c.celular)s+=5;if(c.fecha_nacimiento){const hoy=new Date();const nac=parseFechaLocal(c.fecha_nacimiento);if(nac){const cu=new Date(hoy.getFullYear(),nac.getMonth(),nac.getDate());const d=Math.floor((cu-hoy)/86400000);if(d>=0&&d<=30)s+=5;}}return Math.min(s,100);}
 
