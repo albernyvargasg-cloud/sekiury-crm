@@ -749,7 +749,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <select class="btn btn-outline" style="font-family:Nunito,sans-serif;cursor:pointer;" id="filtro-aseguradora" onchange="filtrarPolizas()">
       <option value="">Todas las aseguradoras</option>
     </select>
-    <select class="btn btn-outline" style="font-family:Nunito,sans-serif;cursor:pointer;" id="filtro-mes-venc" onchange="filtrarPolizas()">
+    <select class="btn btn-outline" style="font-family:Nunito,sans-serif;cursor:pointer;" id="filtro-mes-venc" onchange="onMesVencChange()">
       <option value="">Mes de vencimiento</option>
       <option value="01">Enero</option>
       <option value="02">Febrero</option>
@@ -5603,6 +5603,17 @@ function actualizarStatsPolizas() {
   if (curA) selA.value = curA;
 }
 
+// Elegir un mes de vencimiento debe mostrar TODO lo que vence ese mes, con un clic,
+// sin quedar bloqueado por el filtro de estado (ej. "Por Renovar" solo cubre 31 días
+// hacia adelante, y eso hacía que meses futuros como octubre/noviembre mostraran 0
+// resultados aunque sí había pólizas). El filtro de mes limpia el de estado; ramo y
+// aseguradora se mantienen, porque esos sí tiene sentido combinarlos.
+function onMesVencChange() {
+  const selEstado = document.getElementById('filtro-estado-poliza');
+  if (selEstado) selEstado.value = '';
+  filtrarPolizas();
+}
+
 function filtrarPolizas() {
   const q = (document.getElementById('search-polizas').value||'').toLowerCase();
   const est = document.getElementById('filtro-estado-poliza').value;
@@ -6305,7 +6316,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v45.6';
+const _CRM_VERSION = 'v45.7';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
