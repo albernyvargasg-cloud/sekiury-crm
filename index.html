@@ -1602,7 +1602,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <button class="dp-tab-btn"        id="cfg-tab-ramos"    onclick="setCfgTab('ramos')">📋 Ramos y Comisiones</button>
     <button class="dp-tab-btn"        id="cfg-tab-canales"  onclick="setCfgTab('canales')">🤝 Canales de Venta</button>
     <button class="dp-tab-btn"        id="cfg-tab-usuarios" onclick="setCfgTab('usuarios')">👤 Usuarios</button>
-    <button class="dp-tab-btn"        id="cfg-tab-apikey"   onclick="setCfgTab('apikey')">🔑 API Key IA</button>
+    <button class="dp-tab-btn"        id="cfg-tab-apikey"   onclick="setCfgTab('apikey')">🔒 Motor IA</button>
     <button class="dp-tab-btn"        id="cfg-tab-conocimiento" onclick="setCfgTab('conocimiento')">🧠 Conocimiento IA</button>
   </div>
 
@@ -1680,27 +1680,12 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div id="cfg-tabla-usuarios" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;"></div>
   </div>
 
-  <!-- ══ API KEY IA ══ -->
+  <!-- ══ MOTOR IA — SEGURIDAD ══ -->
   <div id="cfg-content-apikey" style="display:none;">
     <div style="max-width:520px;">
-      <div style="background:rgba(104,215,255,.06);border:1px solid rgba(104,215,255,.15);border-radius:12px;padding:16px;margin-bottom:20px;">
-        <div style="font-size:12px;font-weight:700;color:var(--ciel);margin-bottom:6px;">🧠 Motor IA — Anthropic Claude</div>
-        <div style="font-size:11px;color:var(--t2);line-height:1.6;">La API Key se guarda <strong>solo en tu navegador</strong> (localStorage). Nunca se sube a ningún servidor. Obtén una nueva en <a href="https://console.anthropic.com" target="_blank" style="color:var(--ciel);">console.anthropic.com</a> → API Keys.</div>
-      </div>
-      <div style="margin-bottom:14px;">
-        <label style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--t2);display:block;margin-bottom:6px;">API Key de Anthropic</label>
-        <input id="cfg-api-key-input" type="password" placeholder="Pega aquí tu API Key de Anthropic"
-          style="width:100%;background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:10px 14px;color:var(--t1);font-size:13px;font-family:Nunito,sans-serif;outline:none;"
-          onfocus="this.style.borderColor='var(--ciel)'" onblur="this.style.borderColor='var(--bdr)'">
-        <div style="font-size:11px;margin-top:6px;" id="cfg-api-key-status">
-          <span id="cfg-api-key-guardada" style="color:var(--ok);display:none;">✅ Key guardada en este dispositivo</span>
-          <span id="cfg-api-key-vacia" style="color:var(--t3);">⚠️ Sin key — el Motor IA no funcionará</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="btn btn-primary" onclick="guardarApiKey()">💾 Guardar Key</button>
-        <button class="btn btn-outline" onclick="toggleVerApiKey()">👁 Ver/Ocultar</button>
-        <button class="btn btn-outline" style="color:var(--err);border-color:rgba(239,68,68,.3);" onclick="eliminarApiKey()">🗑 Eliminar</button>
+      <div style="background:rgba(144,255,217,.06);border:1px solid rgba(144,255,217,.2);border-radius:12px;padding:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--turq);margin-bottom:6px;">🔒 Motor IA — Anthropic Claude</div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.6;">La conexión con Claude ahora pasa por un servidor seguro de Sekiury (Supabase Edge Function). La API Key de Anthropic ya no se guarda en este ni en ningún otro navegador — vive únicamente en el servidor. No necesitas configurar nada aquí; el Motor IA funciona automáticamente para cualquier agente con sesión iniciada.</div>
       </div>
     </div>
   </div>
@@ -5347,6 +5332,15 @@ function getClienteIdPorCedula(cedula) {
   return c ? c._id : null;
 }
 
+// Orden de los 11 checkboxes del panel "Notificaciones" (pf-notif-0 .. pf-notif-10 en el
+// formulario de Póliza) — debe coincidir 1:1 con las claves de la columna notif_config
+// (jsonb) en Supabase. Antes el panel se leía y se mostraba, pero nunca se guardaba.
+const NOTIF_CONFIG_KEYS = [
+  'alerta_renovacion', 'correo_cobros_vencer', 'correo_poliza_renovada', 'correo_poliza_vencida',
+  'correo_pago_vencido', 'correo_aviso_cancelacion', 'whatsapp_poliza_vencer', 'whatsapp_cobros_vencer',
+  'whatsapp_poliza_vencida', 'whatsapp_pago_vencido', 'whatsapp_aviso_cancelacion'
+];
+
 // Mapea una fila de public.polizas (Supabase) al formato que usa el formulario del CRM
 function mapPolizaDesdeSupabase(row) {
   const estadoMap = { 'Vigente':'vigente', 'Por Renovar':'por renovar', 'Vencida':'vencida', 'Cancelada':'cancelada', 'Cotización':'vigente', 'Expedición':'vigente' };
@@ -5370,6 +5364,7 @@ function mapPolizaDesdeSupabase(row) {
     forma_pago: row.forma_pago || 'Contado',
     observaciones: row.observaciones || '',
     fecha_creacion: (row.created_at||'').slice(0,10),
+    notificaciones: NOTIF_CONFIG_KEYS.reduce((arr, key, i) => { if (row.notif_config?.[key]) arr.push(i); return arr; }, []),
   };
   // El estado guardado en Supabase no se actualizaba solo con el paso del tiempo.
   // Se recalcula aquí según la fecha real de vencimiento (Vigente/Por Renovar/Vencida),
@@ -5397,6 +5392,7 @@ function mapPolizaASupabase(data) {
     num_cuotas: cuotasPorPeriodicidad[data.periodicidad] || 1,
     estado: estadoMap[data.estado] || 'Vigente',
     observaciones: data.observaciones || null,
+    notif_config: NOTIF_CONFIG_KEYS.reduce((acc, key, i) => { acc[key] = (data.notificaciones||[]).includes(i); return acc; }, {}),
   };
 }
 
@@ -6316,7 +6312,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v45.7';
+const _CRM_VERSION = 'v45.9';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -7900,7 +7896,6 @@ function setCfgTab(tab) {
   if (tab === 'ramos')    renderCfgRamos();
   if (tab === 'canales')  renderCfgCanales();
   if (tab === 'usuarios') renderCfgUsuarios();
-  if (tab === 'apikey')   initCfgApiKey();
   if (tab === 'conocimiento') initConocimientoIA();
 }
 
@@ -7960,37 +7955,6 @@ function getConocimientoIA(asesor) {
   return ctx ? `\n\n═══ CONOCIMIENTO INTERNO SEKIURY (usa esto para respuestas específicas, NO genéricas) ═══${ctx}\n═══════════════════════════════════════════════════════` : '';
 }
 
-function initCfgApiKey() {
-  const key = localStorage.getItem('sekiury_api_key') || '';
-  const inp = document.getElementById('cfg-api-key-input');
-  const gardada = document.getElementById('cfg-api-key-guardada');
-  const vacia = document.getElementById('cfg-api-key-vacia');
-  if (inp) inp.value = key ? '••••••••••••••••••••' : '';
-  if (gardada) gardada.style.display = key ? 'inline' : 'none';
-  if (vacia)   vacia.style.display   = key ? 'none' : 'inline';
-}
-function guardarApiKey() {
-  const inp = document.getElementById('cfg-api-key-input');
-  const key = (inp ? inp.value : '').trim();
-  if (!key) { showToast('⚠️ Ingresa una API Key válida', 'err'); return; }
-  localStorage.setItem('sekiury_api_key', key);
-  initCfgApiKey();
-  showToast('✅ API Key guardada correctamente');
-}
-function toggleVerApiKey() {
-  const inp = document.getElementById('cfg-api-key-input');
-  if (!inp) return;
-  if (inp.type === 'password') { inp.type = 'text'; inp.value = localStorage.getItem('sekiury_api_key') || ''; }
-  else { inp.type = 'password'; inp.value = localStorage.getItem('sekiury_api_key') ? '••••••••••••••••••••' : ''; }
-}
-function eliminarApiKey() {
-  if (!confirm('¿Eliminar la API Key de este dispositivo?')) return;
-  localStorage.removeItem('sekiury_api_key');
-  const inp = document.getElementById('cfg-api-key-input');
-  if (inp) { inp.value = ''; inp.type = 'password'; }
-  initCfgApiKey();
-  showToast('🗑 API Key eliminada');
-}
 
 // ── ASEGURADORAS ─────────────────────────────────────────────────────────────
 let _editAsegId = null;
@@ -9901,8 +9865,22 @@ function mostrarDropdownPK() { filtrarDropdownPK(document.getElementById('pk-cli
 function ocultarDropdownPK() { const l=document.getElementById('pk-dropdown'); if(l) l.style.display='none'; }
 
 // ══ MOTOR IA ══════════════════════════════════════════════════════════════════
-// 🔑 API Key Anthropic — Se lee desde localStorage (configurar en ⚙️ Configuración → API Key)
-function getAnthropicKey() { return localStorage.getItem('sekiury_api_key') || ''; }
+// 🔒 Llama al Motor IA a través del Edge Function seguro de Supabase.
+// La API Key de Anthropic vive solo en el servidor — nunca en el navegador.
+// Requiere sesión activa (usa el token de Supabase Auth del agente).
+async function fetchMotorIA(messages, maxTokens) {
+  const { data: sesionIA } = await sb.auth.getSession();
+  const token = sesionIA?.session?.access_token;
+  if (!token) throw new Error('Sesión no válida — vuelve a iniciar sesión');
+  return fetch(`${SUPABASE_URL}/functions/v1/motor-ia`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify({ max_tokens: maxTokens, messages })
+  });
+}
 
 function calcularEstadoPoliza(p){if(p.estado==='cancelada'||p.estado==='renovada')return p.estado;if(!p.fecha_fin)return p.estado||'vigente';const hoy=new Date();hoy.setHours(0,0,0,0);const fin=parseFechaLocal(p.fecha_fin);if(!fin)return p.estado||'vigente';fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d<0)return'vencida';if(d<=31)return'por renovar';return'vigente';}
 
@@ -10167,26 +10145,19 @@ Rápido, claro, accionable. Como le dirías esto a ${asesor} en el pasillo antes
     const btn=document.getElementById('ia-btn-analizar');
     if(btn){btn.disabled=true;btn.textContent='⏳ Analizando...';}
 
-    const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-api-key':getAnthropicKey(),
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1200,
-        stream:true,
-        messages:[{role:'user',content:prompts[tipo]||prompts.perfil}]
-      })
-    });
+    const r=await fetchMotorIA([{role:'user',content:prompts[tipo]||prompts.perfil}], 1200);
+    const bodyEl=document.getElementById(bodyId);
+    if(!r.ok){
+      let msg='Error del Motor IA';
+      try{ msg=(await r.json())?.error||msg; }catch{}
+      if(bodyEl)bodyEl.innerHTML=`<span style="color:var(--err);">${msg}</span>`;
+      if(btn){btn.disabled=false;btn.innerHTML='🧠 Analizar con IA';}
+      return;
+    }
 
     const reader=r.body.getReader();
     const decoder=new TextDecoder();
     let texto='';
-    const bodyEl=document.getElementById(bodyId);
 
     while(true){
       const{done,value}=await reader.read();
@@ -10210,7 +10181,7 @@ Rápido, claro, accionable. Como le dirías esto a ${asesor} en el pasillo antes
     if(btn){btn.disabled=false;btn.innerHTML='🧠 Analizar con IA';}
 
   }catch(e){
-    res.innerHTML='<span style="color:var(--err);">Error de conexión — verifica tu API Key</span>';
+    res.innerHTML='<span style="color:var(--err);">Error de conexión con el Motor IA — intenta de nuevo</span>';
     const btn=document.getElementById('ia-btn-analizar');
     if(btn){btn.disabled=false;btn.innerHTML='🧠 Analizar con IA';}
   }
@@ -10251,15 +10222,18 @@ Da respuestas prácticas. Termina con UN paso concreto.${getConocimientoIA(mCtx?
 ${ctxCliente}
 Pregunta del asesor: ${q}`;
   try{
-    const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':getAnthropicKey(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,stream:true,messages:[{role:'user',content:ctx}]})
-    });
+    const r=await fetchMotorIA([{role:'user',content:ctx}], 600);
+    const bodyEl=document.getElementById(bodyId);
+    if(!r.ok){
+      let msg='Error del Motor IA';
+      try{ msg=(await r.json())?.error||msg; }catch{}
+      if(bodyEl)bodyEl.innerHTML=`<span style="color:var(--err);">${msg}</span>`;
+      if(btn){btn.disabled=false;btn.textContent='Preguntar →';}
+      return;
+    }
     const reader=r.body.getReader();
     const decoder=new TextDecoder();
     let texto='';
-    const bodyEl=document.getElementById(bodyId);
     while(true){
       const{done,value}=await reader.read();
       if(done)break;
