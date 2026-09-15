@@ -5343,7 +5343,7 @@ const NOTIF_CONFIG_KEYS = [
 
 // Mapea una fila de public.polizas (Supabase) al formato que usa el formulario del CRM
 function mapPolizaDesdeSupabase(row) {
-  const estadoMap = { 'Vigente':'vigente', 'Por Renovar':'por renovar', 'Vencida':'vencida', 'Cancelada':'cancelada', 'Cotización':'vigente', 'Expedición':'vigente' };
+  const estadoMap = { 'Vigente':'vigente', 'Por Renovar':'por renovar', 'Vencida':'vencida', 'Cancelada':'cancelada', 'Cotización':'vigente', 'Expedición':'vigente', 'Renovada':'renovada' };
   const cliente = clientes.find(c => c._id === row.cliente_id);
   const p = {
     _id: row.id,
@@ -5375,7 +5375,7 @@ function mapPolizaDesdeSupabase(row) {
 
 // Mapea el formato del formulario del CRM a las columnas reales de public.polizas
 function mapPolizaASupabase(data) {
-  const estadoMap = { 'vigente':'Vigente', 'por renovar':'Por Renovar', 'vencida':'Vencida', 'cancelada':'Cancelada' };
+  const estadoMap = { 'vigente':'Vigente', 'por renovar':'Por Renovar', 'vencida':'Vencida', 'cancelada':'Cancelada', 'renovada':'Renovada' };
   const cuotasPorPeriodicidad = { 'Anual':1, 'Semestral':2, 'Trimestral':4, 'Mensual':12, 'Contado':1 };
   return {
     numero_poliza: data.numero_poliza || '',
@@ -6271,19 +6271,49 @@ function handleFilePolizas(file) {
   reader.readAsBinaryString(file);
 }
 
-function confirmarImportPolizas() {
+async function confirmarImportPolizas() {
   const nuevas = importDataPolizas.filter(imp =>
     !polizas.some(p => p.numero_poliza === imp.numero_poliza)
   );
   const dup = importDataPolizas.length - nuevas.length;
-  polizas = [...polizas, ...nuevas];
-  guardarPolizasLS();
-  filtradas_p = [...polizas];
-  filtrarPolizas();
+  if (!nuevas.length) {
+    cerrarModal('modal-import-polizas');
+    showToast(`0 pólizas importadas${dup?' · '+dup+' duplicadas omitidas':''}`, 'err');
+    return;
+  }
+
+  const btnImportar = document.getElementById('btn-confirmar-import-polizas');
+  const textoOriginalBtn = btnImportar ? btnImportar.textContent : '';
+  if (btnImportar) { btnImportar.disabled = true; btnImportar.textContent = 'Importando...'; }
+
+  // Sincroniza cada póliza nueva con Supabase (fuente única de verdad).
+  // Las que no encuentren cliente/aseguradora coincidente se reportan, no se pierden en silencio.
+  let sincronizadas = 0;
+  let sinMatch = 0;
+  for (const imp of nuevas) {
+    const payload = mapPolizaASupabase(imp);
+    if (!payload.cliente_id || !payload.aseguradora_id) { sinMatch++; continue; }
+    payload.agente_id = SESION_ACTUAL?.agente_id || null;
+    try {
+      const { error } = await sb.from('polizas').insert(payload);
+      if (error) throw error;
+      sincronizadas++;
+    } catch (e) {
+      console.error('Error importando póliza', imp.numero_poliza, e);
+      sinMatch++;
+    }
+  }
+
+  await cargarPolizasDesdeSupabase();
   actualizarStatsPolizas();
-  cerrarModal('modal-import-polizas');
   actualizarStatsComisiones();
-  showToast(`${nuevas.length} pólizas importadas${dup?' · '+dup+' duplicadas omitidas':''}`);
+  cerrarModal('modal-import-polizas');
+  if (btnImportar) { btnImportar.disabled = false; btnImportar.textContent = textoOriginalBtn; }
+
+  let msg = `${sincronizadas} pólizas importadas a Supabase`;
+  if (dup) msg += ` · ${dup} duplicadas omitidas`;
+  if (sinMatch) msg += ` · ${sinMatch} sin cliente/aseguradora coincidente (no sincronizadas)`;
+  showToast(msg, sinMatch ? 'err' : undefined);
 }
 
 function exportarPolizas() {
@@ -6312,7 +6342,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v45.9';
+const _CRM_VERSION = 'v46.0';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -6814,7 +6844,7 @@ function renovarPoliza(id) {
   abrirModal('modal-renovar');
 }
 
-function confirmarRenovacion() {
+async function confirmarRenovacion() {
   const id = window._renovandoId;
   const p = polizas.find(x=>x._id===id);
   if (!p) return;
@@ -6869,16 +6899,10 @@ function confirmarRenovacion() {
     }
   }
 
-  // Marcar original como Renovada
-  const idx = polizas.findIndex(x=>x._id===id);
-  polizas[idx].estado = 'renovada';
-  polizas[idx].fecha_renovacion = new Date().toISOString().slice(0,10);
-
-  // Crear nueva póliza
-  const nuevaPoliza = {
+  // Datos de la nueva póliza (hereda cliente/aseguradora/ramo de la original vía el spread de p)
+  const nuevaPolizaData = {
     ...p,
     ...extraData,
-    _id: genId(),
     estado: document.getElementById('ren-estado').value,
     fecha_inicio: fechaIni,
     fecha_fin: fechaFin,
@@ -6890,15 +6914,38 @@ function confirmarRenovacion() {
     poliza_origen_id: id,
     fecha_creacion: new Date().toISOString().slice(0,10),
   };
-  polizas.push(nuevaPoliza);
-  guardarPolizasLS();
-  filtradas_p = [...polizas];
-  filtrarPolizas();
-  actualizarStatsPolizas();
-  actualizarDashboard();
-  cerrarModal('modal-renovar');
-  showToast('Póliza renovada exitosamente 🔄');
-  setTimeout(() => sincronizarTareasAutomaticas(), 300);
+
+  const payload = mapPolizaASupabase(nuevaPolizaData);
+  if (!payload.cliente_id) { showToast('No se encontró el cliente de esta póliza en Supabase — no se puede renovar', 'err'); return; }
+  if (!payload.aseguradora_id) { showToast('No se reconoce la aseguradora de esta póliza — no se puede renovar', 'err'); return; }
+  payload.agente_id = SESION_ACTUAL?.agente_id || null;
+
+  const btnRenovar = document.querySelector('#modal-renovar button[onclick="confirmarRenovacion()"]');
+  const textoOriginalBtn = btnRenovar ? btnRenovar.textContent : '';
+  if (btnRenovar) { btnRenovar.disabled = true; btnRenovar.textContent = 'Renovando...'; }
+
+  try {
+    // 1) Crear la nueva póliza (renovada) en Supabase
+    const { error: errInsert } = await sb.from('polizas').insert(payload);
+    if (errInsert) throw errInsert;
+
+    // 2) Marcar la póliza original como Renovada en Supabase
+    const { error: errUpdate } = await sb.from('polizas').update({ estado: 'Renovada' }).eq('id', id);
+    if (errUpdate) throw errUpdate;
+
+    // 3) Refrescar todo desde Supabase (fuente única de verdad)
+    await cargarPolizasDesdeSupabase();
+    actualizarStatsPolizas();
+    actualizarDashboard();
+    cerrarModal('modal-renovar');
+    showToast('Póliza renovada exitosamente 🔄');
+    setTimeout(() => sincronizarTareasAutomaticas(), 300);
+  } catch (e) {
+    console.error('Error renovando póliza en Supabase:', e);
+    showToast('Error al renovar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btnRenovar) { btnRenovar.disabled = false; btnRenovar.textContent = textoOriginalBtn; }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
