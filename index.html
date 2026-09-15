@@ -6342,7 +6342,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.0';
+const _CRM_VERSION = 'v46.1';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -8422,6 +8422,167 @@ function getLegalCasos()      { return JSON.parse(localStorage.getItem(LEGAL_CAS
 function getLegalClientes()   { return JSON.parse(localStorage.getItem(LEGAL_CLIENTES_KEY) || '[]'); }
 function getLegalHonorarios() { return JSON.parse(localStorage.getItem(LEGAL_HONORARIOS_KEY) || '[]'); }
 
+// ── Sincronización con Supabase (tablas legal_clientes / legal_casos / legal_honorarios) ──
+// El resto del módulo Legal sigue leyendo de localStorage vía getLegalCasos()/getLegalClientes()/
+// getLegalHonorarios() sin cambios — estas funciones simplemente mantienen esa caché local
+// actualizada con la fuente real (Supabase), igual que se hace con Pólizas.
+
+function mapLegalClienteDesdeSupabase(row) {
+  return {
+    _id: row.id,
+    tipo_persona: row.tipo_persona || 'natural',
+    tipo_doc: row.tipo_doc || 'CC',
+    nombre: row.nombre || '',
+    documento: row.documento || '',
+    celular: row.celular || '',
+    email: row.email || '',
+    direccion: row.direccion || '',
+    ciudad: row.ciudad || '',
+    estado: row.estado || 'activo',
+    obs: row.obs || '',
+  };
+}
+
+function mapLegalClienteASupabase(data) {
+  return {
+    tipo_persona: data.tipo_persona || 'natural',
+    tipo_doc: data.tipo_doc || 'CC',
+    nombre: data.nombre || '',
+    documento: data.documento || '',
+    celular: data.celular || null,
+    email: data.email || null,
+    direccion: data.direccion || null,
+    ciudad: data.ciudad || null,
+    estado: data.estado || 'activo',
+    obs: data.obs || null,
+  };
+}
+
+function mapLegalCasoDesdeSupabase(row) {
+  return {
+    _id: row.id,
+    cliente_id: row.cliente_id,
+    tipo: row.tipo || '',
+    estado: row.estado || 'activo',
+    radicado: row.radicado || '',
+    juzgado: row.juzgado || '',
+    tipo_despacho: row.tipo_despacho || 'juzgado',
+    fecha_apertura: row.fecha_apertura || '',
+    prox_audiencia: row.prox_audiencia || '',
+    honorarios: row.honorarios || 0,
+    anticipo: row.anticipo || 0,
+    descripcion: row.descripcion || '',
+    obs: row.obs || '',
+    causante: row.causante || '',
+    causante_cc: row.causante_cc || '',
+    causante_notaria: row.causante_notaria || '',
+    causante_ciudad: row.causante_ciudad || '',
+    fecha_fallecimiento: row.fecha_fallecimiento || '',
+    escritura: row.escritura || '',
+    tiene_conyuge: row.tiene_conyuge || false,
+    conyuge_nombre: row.conyuge_nombre || '',
+    conyuge_cc: row.conyuge_cc || '',
+    conyuge_tipo: row.conyuge_tipo || 'matrimonio',
+    herederos: row.herederos || [],
+    terceros: row.terceros || [],
+    nombre_caso: row.nombre_caso || '',
+    num_herederos: row.num_herederos || 0,
+    fecha_creacion: (row.created_at||'').slice(0,10),
+  };
+}
+
+function mapLegalCasoASupabase(data) {
+  return {
+    cliente_id: data.cliente_id,
+    tipo: data.tipo,
+    estado: data.estado || 'activo',
+    radicado: data.radicado || null,
+    juzgado: data.juzgado || null,
+    tipo_despacho: data.tipo_despacho || 'juzgado',
+    fecha_apertura: data.fecha_apertura || null,
+    prox_audiencia: data.prox_audiencia || null,
+    honorarios: parseFloat(data.honorarios)||0,
+    anticipo: parseFloat(data.anticipo)||0,
+    descripcion: data.descripcion || null,
+    obs: data.obs || null,
+    causante: data.causante || null,
+    causante_cc: data.causante_cc || null,
+    causante_notaria: data.causante_notaria || null,
+    causante_ciudad: data.causante_ciudad || null,
+    fecha_fallecimiento: data.fecha_fallecimiento || null,
+    escritura: data.escritura || null,
+    tiene_conyuge: !!data.tiene_conyuge,
+    conyuge_nombre: data.conyuge_nombre || null,
+    conyuge_cc: data.conyuge_cc || null,
+    conyuge_tipo: data.conyuge_tipo || 'matrimonio',
+    herederos: data.herederos || [],
+    terceros: data.terceros || [],
+    nombre_caso: data.nombre_caso || null,
+    num_herederos: data.num_herederos || 0,
+  };
+}
+
+function mapLegalHonorarioDesdeSupabase(row) {
+  return {
+    _id: row.id,
+    caso_id: row.caso_id,
+    concepto: row.concepto || '',
+    valor: row.valor || 0,
+    fecha: row.fecha || '',
+    estado: row.estado || 'pendiente',
+    metodo: row.metodo || '',
+    obs: row.obs || '',
+  };
+}
+
+function mapLegalHonorarioASupabase(data) {
+  return {
+    caso_id: data.caso_id,
+    concepto: data.concepto,
+    valor: parseFloat(data.valor)||0,
+    fecha: data.fecha || null,
+    estado: data.estado || 'pendiente',
+    metodo: data.metodo || null,
+    obs: data.obs || null,
+  };
+}
+
+async function cargarLegalClientesDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('legal_clientes').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando clientes legales de Supabase:', error.message); return; }
+    localStorage.setItem(LEGAL_CLIENTES_KEY, JSON.stringify((data || []).map(mapLegalClienteDesdeSupabase)));
+  } catch (e) {
+    console.error('Error de red cargando clientes legales:', e);
+  }
+}
+
+async function cargarLegalCasosDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('legal_casos').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando casos legales de Supabase:', error.message); return; }
+    localStorage.setItem(LEGAL_CASOS_KEY, JSON.stringify((data || []).map(mapLegalCasoDesdeSupabase)));
+  } catch (e) {
+    console.error('Error de red cargando casos legales:', e);
+  }
+}
+
+async function cargarLegalHonorariosDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('legal_honorarios').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando honorarios legales de Supabase:', error.message); return; }
+    localStorage.setItem(LEGAL_HONORARIOS_KEY, JSON.stringify((data || []).map(mapLegalHonorarioDesdeSupabase)));
+  } catch (e) {
+    console.error('Error de red cargando honorarios legales:', e);
+  }
+}
+
+async function cargarLegalDesdeSupabase() {
+  await cargarLegalClientesDesdeSupabase();
+  await cargarLegalCasosDesdeSupabase();
+  await cargarLegalHonorariosDesdeSupabase();
+}
+
 const COLORES_TIPO = {
   'Laboral':'rgba(104,215,255,.2)','Tributario':'rgba(245,158,11,.2)',
   'Administrativo':'rgba(144,255,217,.2)','Civil':'rgba(220,71,158,.2)','Penal':'rgba(239,68,68,.2)',
@@ -8759,7 +8920,7 @@ function onTipoCasoChange() {
   }
 }
 
-function guardarCaso() {
+async function guardarCaso() {
   const clienteId = document.getElementById('lc-cliente-id').value;
   const tipo = document.getElementById('lc-tipo').value;
   if (!clienteId) { showToast('Selecciona un cliente', 'err'); return; }
@@ -8790,31 +8951,49 @@ function guardarCaso() {
     terceros: JSON.parse(JSON.stringify(_lcTerceros)),
     nombre_caso: document.getElementById('lc-nombre-caso')?.value?.trim() || '',
     num_herederos: _lcHerederos.length,
-    fecha_creacion: new Date().toISOString().split('T')[0],
   };
-  const lista = getLegalCasos();
-  if (_editCasoId) {
-    const idx = lista.findIndex(x=>x._id===_editCasoId);
-    lista[idx] = {...lista[idx], ...data};
-    showToast('Caso actualizado ✅');
-  } else {
-    data._id = 'caso_' + genId();
-    lista.push(data);
-    showToast('Caso registrado ✅');
+  const payload = mapLegalCasoASupabase(data);
+
+  const btnGuardar = document.querySelector('#modal-legal-caso button[onclick="guardarCaso()"]');
+  const textoOriginalBtn = btnGuardar ? btnGuardar.textContent : '';
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
+
+  try {
+    if (_editCasoId) {
+      const { error } = await sb.from('legal_casos').update(payload).eq('id', _editCasoId);
+      if (error) throw error;
+      showToast('Caso actualizado ✅');
+    } else {
+      payload.agente_id = SESION_ACTUAL?.agente_id || null;
+      const { error } = await sb.from('legal_casos').insert(payload);
+      if (error) throw error;
+      showToast('Caso registrado ✅');
+    }
+    await cargarLegalCasosDesdeSupabase();
+    cerrarModal('modal-legal-caso');
+    filtrarCasos();
+    renderLegalKpis();
+  } catch (e) {
+    console.error('Error guardando caso legal en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = textoOriginalBtn; }
   }
-  localStorage.setItem(LEGAL_CASOS_KEY, JSON.stringify(lista));
-  cerrarModal('modal-legal-caso');
-  filtrarCasos();
-  renderLegalKpis();
 }
 
-function eliminarCaso(id) {
+async function eliminarCaso(id) {
   if (!confirm('¿Eliminar este caso?')) return;
-  const lista = getLegalCasos().filter(x=>x._id!==id);
-  localStorage.setItem(LEGAL_CASOS_KEY, JSON.stringify(lista));
-  filtrarCasos();
-  renderLegalKpis();
-  showToast('Caso eliminado');
+  try {
+    const { error } = await sb.from('legal_casos').delete().eq('id', id);
+    if (error) throw error;
+    await cargarLegalCasosDesdeSupabase();
+    filtrarCasos();
+    renderLegalKpis();
+    showToast('Caso eliminado');
+  } catch (e) {
+    console.error('Error eliminando caso legal en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 function buscarClienteLegalForm(q) {
@@ -8953,13 +9132,12 @@ function abrirNuevoHonorario() {
   abrirModal('modal-legal-honorario');
 }
 
-function guardarHonorario() {
+async function guardarHonorario() {
   const casoId = document.getElementById('lh-caso').value;
   const valor = document.getElementById('lh-valor').value;
   const concepto = document.getElementById('lh-concepto').value.trim();
   if (!casoId || !valor || !concepto) { showToast('Caso, concepto y valor son obligatorios','err'); return; }
   const data = {
-    _id: 'hon_' + genId(),
     caso_id: casoId,
     concepto,
     valor: parseFloat(valor)||0,
@@ -8968,21 +9146,42 @@ function guardarHonorario() {
     metodo: document.getElementById('lh-metodo').value,
     obs: document.getElementById('lh-obs').value.trim(),
   };
-  const lista = getLegalHonorarios();
-  lista.push(data);
-  localStorage.setItem(LEGAL_HONORARIOS_KEY, JSON.stringify(lista));
-  cerrarModal('modal-legal-honorario');
-  renderHonorarios();
-  renderLegalKpis();
-  showToast('Honorario registrado ✅');
+  const payload = mapLegalHonorarioASupabase(data);
+  payload.agente_id = SESION_ACTUAL?.agente_id || null;
+
+  const btnGuardar = document.querySelector('#modal-legal-honorario button[onclick="guardarHonorario()"]');
+  const textoOriginalBtn = btnGuardar ? btnGuardar.textContent : '';
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
+
+  try {
+    const { error } = await sb.from('legal_honorarios').insert(payload);
+    if (error) throw error;
+    await cargarLegalHonorariosDesdeSupabase();
+    cerrarModal('modal-legal-honorario');
+    renderHonorarios();
+    renderLegalKpis();
+    showToast('Honorario registrado ✅');
+  } catch (e) {
+    console.error('Error guardando honorario legal en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = textoOriginalBtn; }
+  }
 }
 
-function eliminarHonorario(id) {
+async function eliminarHonorario(id) {
   if (!confirm('¿Eliminar este honorario?')) return;
-  localStorage.setItem(LEGAL_HONORARIOS_KEY, JSON.stringify(getLegalHonorarios().filter(x=>x._id!==id)));
-  renderHonorarios();
-  renderLegalKpis();
-  showToast('Eliminado');
+  try {
+    const { error } = await sb.from('legal_honorarios').delete().eq('id', id);
+    if (error) throw error;
+    await cargarLegalHonorariosDesdeSupabase();
+    renderHonorarios();
+    renderLegalKpis();
+    showToast('Eliminado');
+  } catch (e) {
+    console.error('Error eliminando honorario legal en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 // ── CLIENTES LEGALES ──────────────────────────────────────────────────────
@@ -9058,7 +9257,7 @@ function editarClienteLegal(id) {
   abrirModal('modal-legal-cliente');
 }
 
-function guardarClienteLegal() {
+async function guardarClienteLegal() {
   const nombre = document.getElementById('lcli-nombre').value.trim();
   const doc = document.getElementById('lcli-doc').value.trim();
   if (!nombre || !doc) { showToast('Nombre y documento son obligatorios','err'); return; }
@@ -9073,36 +9272,57 @@ function guardarClienteLegal() {
     estado: document.getElementById('lcli-estado').value,
     obs: document.getElementById('lcli-obs').value.trim(),
   };
-  const lista = getLegalClientes();
-  if (_editCliLegalId) {
-    const idx = lista.findIndex(x=>x._id===_editCliLegalId);
-    lista[idx] = {...lista[idx], ...data};
-    showToast('Cliente actualizado ✅');
-  } else {
-    data._id = 'lcli_' + genId();
-    lista.push(data);
-    showToast('Cliente legal agregado ✅');
-  }
-  localStorage.setItem(LEGAL_CLIENTES_KEY, JSON.stringify(lista));
-  cerrarModal('modal-legal-cliente');
-  filtrarClientesLegales();
-  // Si veníamos del modal de caso, volvemos y auto-seleccionamos el cliente creado
-  if (_lcDesdeModalCaso && !_editCliLegalId) {
-    _lcDesdeModalCaso = false;
-    setTimeout(() => {
-      abrirModal('modal-legal-caso');
-      const nuevoId = lista[lista.length-1]._id;
-      selClienteLegalForm(nuevoId);
-      showToast('✅ Cliente creado y seleccionado en el caso');
-    }, 150);
+  const payload = mapLegalClienteASupabase(data);
+
+  const btnGuardar = document.querySelector('#modal-legal-cliente button[onclick="guardarClienteLegal()"]');
+  const textoOriginalBtn = btnGuardar ? btnGuardar.textContent : '';
+  if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
+
+  try {
+    let clienteIdGuardado = _editCliLegalId;
+    if (_editCliLegalId) {
+      const { error } = await sb.from('legal_clientes').update(payload).eq('id', _editCliLegalId);
+      if (error) throw error;
+      showToast('Cliente actualizado ✅');
+    } else {
+      payload.agente_id = SESION_ACTUAL?.agente_id || null;
+      const { data: nuevo, error } = await sb.from('legal_clientes').insert(payload).select('id').single();
+      if (error) throw error;
+      clienteIdGuardado = nuevo.id;
+      showToast('Cliente legal agregado ✅');
+    }
+    await cargarLegalClientesDesdeSupabase();
+    cerrarModal('modal-legal-cliente');
+    filtrarClientesLegales();
+    // Si veníamos del modal de caso, volvemos y auto-seleccionamos el cliente creado
+    if (_lcDesdeModalCaso && !_editCliLegalId) {
+      _lcDesdeModalCaso = false;
+      setTimeout(() => {
+        abrirModal('modal-legal-caso');
+        selClienteLegalForm(clienteIdGuardado);
+        showToast('✅ Cliente creado y seleccionado en el caso');
+      }, 150);
+    }
+  } catch (e) {
+    console.error('Error guardando cliente legal en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
+  } finally {
+    if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.textContent = textoOriginalBtn; }
   }
 }
 
-function eliminarClienteLegal(id) {
+async function eliminarClienteLegal(id) {
   if (!confirm('¿Eliminar este cliente legal?')) return;
-  localStorage.setItem(LEGAL_CLIENTES_KEY, JSON.stringify(getLegalClientes().filter(x=>x._id!==id)));
-  filtrarClientesLegales();
-  showToast('Cliente eliminado');
+  try {
+    const { error } = await sb.from('legal_clientes').delete().eq('id', id);
+    if (error) throw error;
+    await cargarLegalClientesDesdeSupabase();
+    filtrarClientesLegales();
+    showToast('Cliente eliminado');
+  } catch (e) {
+    console.error('Error eliminando cliente legal en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
 
@@ -9479,12 +9699,13 @@ function aplicarSesion(usuario) {
     document.documentElement.style.setProperty('--ciel', '#1D6FB8'); // azul corporativo, legible en blanco
   }
 
-  // Sesión confirmada — sincronizar Clientes, Pólizas, Siniestros, Tareas y Cobros con Supabase
+  // Sesión confirmada — sincronizar Clientes, Pólizas, Siniestros, Tareas, Cobros y Legal con Supabase
   cargarClientesDesdeSupabase()
     .then(() => cargarPolizasDesdeSupabase())
     .then(() => cargarSiniestrosDesdeSupabase())
     .then(() => cargarTareasDesdeSupabase())
     .then(() => cargarCobrosDesdeSupabase())
+    .then(() => cargarLegalDesdeSupabase())
     .then(() => cargarBandejaWhatsApp());
 
   // Revisar mensajes nuevos de WhatsApp cada 60 segundos (actualiza el contador del menú)
