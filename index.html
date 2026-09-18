@@ -6342,7 +6342,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.1';
+const _CRM_VERSION = 'v46.2';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -6926,7 +6926,7 @@ async function confirmarRenovacion() {
 
   try {
     // 1) Crear la nueva póliza (renovada) en Supabase
-    const { error: errInsert } = await sb.from('polizas').insert(payload);
+    const { data: polizaRenovada, error: errInsert } = await sb.from('polizas').insert(payload).select('id').single();
     if (errInsert) throw errInsert;
 
     // 2) Marcar la póliza original como Renovada en Supabase
@@ -6940,6 +6940,16 @@ async function confirmarRenovacion() {
     cerrarModal('modal-renovar');
     showToast('Póliza renovada exitosamente 🔄');
     setTimeout(() => sincronizarTareasAutomaticas(), 300);
+
+    // Mensaje de confirmación por WhatsApp — agregado en v46.2 (18-sep-2026): antes solo lo
+    // enviaba guardarPoliza() (formulario normal), el asistente "🔄 Renovar" nunca lo disparaba.
+    if (polizaRenovada?.id) {
+      fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + (await sb.auth.getSession()).data.session.access_token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modo: 'poliza_evento', poliza_id: polizaRenovada.id, es_nueva: false }),
+      }).catch(e => console.warn('No se pudo enviar el WhatsApp de confirmación de renovación:', e));
+    }
   } catch (e) {
     console.error('Error renovando póliza en Supabase:', e);
     showToast('Error al renovar en Supabase: ' + (e.message||''), 'err');
