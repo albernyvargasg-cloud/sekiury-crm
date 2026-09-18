@@ -6152,6 +6152,11 @@ async function guardarPoliza() {
   if (!payload.cliente_id) { showToast('No se encontró el cliente por su cédula — selecciónalo desde el buscador', 'err'); return; }
   if (!payload.aseguradora_id) { showToast('No se reconoce la aseguradora seleccionada — verifica el nombre', 'err'); return; }
 
+  // Estado ANTES de guardar — se usa después para decidir si el cambio amerita avisarle
+  // al cliente por WhatsApp, o si es solo una edición de rutina (beneficiarios, observaciones,
+  // comisiones, etc.) que no debe generar otro aviso de "tu póliza fue renovada". v46.3 (18-sep-2026).
+  const polizaOriginalAntesDeGuardar = editandoPolizaId ? polizas.find(p => p._id === editandoPolizaId) : null;
+
   const btnGuardar = document.querySelector('#modal-poliza button[onclick="guardarPoliza()"]');
   const textoOriginalBtn = btnGuardar ? btnGuardar.textContent : '';
   if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.textContent = 'Guardando...'; }
@@ -6175,8 +6180,16 @@ async function guardarPoliza() {
     cerrarModal('modal-poliza');
     setTimeout(() => sincronizarTareasAutomaticas(), 300);
 
-    // Mensaje de confirmación por WhatsApp — "golpe de credibilidad" apenas queda activa/renovada la póliza
-    if (polizaIdGuardada) {
+    // Mensaje de confirmación por WhatsApp — "golpe de credibilidad" apenas queda activa/renovada la póliza.
+    // v46.3 (18-sep-2026): antes se disparaba en CUALQUIER guardado (incluida una edición de rutina
+    // como agregar un beneficiario), así que el cliente podía recibir "¡ya renovamos tu póliza!" sin que
+    // hubiera pasado nada nuevo. Ahora solo se envía cuando de verdad hay un evento real:
+    //  (a) la póliza se acaba de crear, o
+    //  (b) es una edición donde la fecha de fin realmente cambió (una renovación genuina).
+    // Editar beneficiarios, observaciones, comisiones, etc. sin tocar la vigencia ya NO envía el aviso.
+    const esCreacionNueva = !editandoPolizaId;
+    const esRenovacionReal = !!polizaOriginalAntesDeGuardar && polizaOriginalAntesDeGuardar.fecha_fin !== data.fecha_fin;
+    if (polizaIdGuardada && (esCreacionNueva || esRenovacionReal)) {
       const esNueva = (data.nueva_renovada || 'Nueva') !== 'Renovada';
       fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
         method: 'POST',
@@ -6342,7 +6355,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.2';
+const _CRM_VERSION = 'v46.3';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
