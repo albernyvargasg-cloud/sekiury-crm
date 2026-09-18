@@ -881,6 +881,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <option value="">Todos los vendedores</option>
     </select>
     <select class="btn btn-outline" style="font-family:Nunito,sans-serif;cursor:pointer;" id="filtro-cobro-vencidos" onchange="filtrarCobros()">
+      <option value="cartera-activa" selected>Cartera activa (0-60d)</option>
       <option value="">Todos</option>
       <option value="vencidos">Solo vencidos</option>
       <option value="al-dia">Al día</option>
@@ -5044,7 +5045,15 @@ function filtrarCobros() {
     const txt = `${c.nombre_cliente||''} ${c.numero_poliza||''} ${c.aseguradora||''} ${c.documento_cliente||''}`.toLowerCase();
     const dias = parseFloat(c.dias_vencidos||0);
     const noVigente = !!c.marcado_no_vigente;
-    const matchV = !venc || (venc==='vencidos' ? dias>0 : venc==='al-dia' ? dias<=0 : venc==='no-vigente' ? noVigente : true);
+    // 'cartera-activa' — v46.4 (18-sep-2026): vista por defecto al entrar al módulo. Solo cartera
+    // real y reciente (al día o hasta 60 días vencidos); todo lo demás (61-365d, y lo marcado como
+    // no vigente por pasar de 365d) queda oculto acá, visible solo si cambian el filtro a otra opción.
+    const matchV = venc === 'cartera-activa' ? (dias <= 60 && !noVigente)
+      : !venc ? true
+      : venc === 'vencidos' ? dias > 0
+      : venc === 'al-dia' ? dias <= 0
+      : venc === 'no-vigente' ? noVigente
+      : true;
     return (!q || txt.includes(q)) && (!aseg || c.aseguradora===aseg) && (!vend || c.vendedor===vend) && matchV;
   });
   renderCobros();
@@ -6355,7 +6364,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.3';
+const _CRM_VERSION = 'v46.4';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
