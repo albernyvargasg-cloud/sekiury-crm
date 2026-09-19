@@ -885,6 +885,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <option value="">Todos</option>
       <option value="vencidos">Solo vencidos</option>
       <option value="al-dia">Al día</option>
+      <option value="pagados">Pagados</option>
     <option value="no-vigente">Marcados no vigente</option>
     </select>
     <span style="font-size:12px;color:var(--t3);margin-left:auto;" id="cresult-count"></span>
@@ -1197,6 +1198,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:var(--t3);font-size:13px;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">
       🏢 Por Aseguradora
     </button>
+    <button id="tab-planilla-com" onclick="setTabComision('planilla')"
+      style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:var(--t3);font-size:13px;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">
+      🧾 Planilla Real
+    </button>
   </div>
 
   <!-- TAB: TABLA DE COMISIONES -->
@@ -1247,6 +1252,43 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
       <div><h1>Comisiones por <span style="color:var(--ciel)">Aseguradora</span></h1><p>Producción y comisiones por compañía</p></div>
     </div>
     <div id="resumen-aseguradoras"></div>
+  </div>
+
+  <!-- TAB: PLANILLA REAL (v46.5) — conectada a Supabase, se alimenta al marcar un cobro como pagado -->
+  <div id="tab-content-planilla" style="display:none;">
+    <div class="page-header">
+      <div><h1>Planilla <span style="color:var(--ciel)">Real de Comisiones</span></h1><p>Comisiones generadas al marcar cobros como pagados — pendientes por cobrar y ya cobradas por mes</p></div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card c4"><div class="sv" id="plc-pend" style="font-size:18px;">$0</div><div class="sl">Pendiente por Cobrar</div></div>
+      <div class="stat-card c2"><div class="sv" id="plc-cobrado-mes" style="font-size:18px;">$0</div><div class="sl">Cobrado Este Mes</div></div>
+      <div class="stat-card c1"><div class="sv" id="plc-total">0</div><div class="sl">Total Registros</div></div>
+    </div>
+    <div class="toolbar">
+      <select class="btn btn-outline" id="plc-filtro-estado" onchange="filtrarPlanillaComisiones()" style="font-family:Nunito,sans-serif;cursor:pointer;">
+        <option value="pendiente_por_cobrar" selected>Pendientes por cobrar</option>
+        <option value="cobrada">Cobradas</option>
+        <option value="">Todas</option>
+      </select>
+      <select class="btn btn-outline" id="plc-filtro-pagador" onchange="filtrarPlanillaComisiones()" style="font-family:Nunito,sans-serif;cursor:pointer;">
+        <option value="">Todos los pagadores</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <div class="table-top-line"></div>
+      <div style="display:grid;grid-template-columns:1.8fr 1.3fr 1.3fr 1fr 1fr 1fr 140px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr);">
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">CLIENTE / PÓLIZA</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">ASEGURADORA</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">PAGADOR</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">VALOR</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">ESTADO</div>
+        <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--t3);">MES COBRO</div>
+        <div></div>
+      </div>
+      <div id="tabla-planilla-comisiones">
+        <div class="empty-state"><div class="ei">🧾</div><div class="et">Aún no hay comisiones registradas</div></div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -2283,6 +2325,61 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="cerrarModal('modal-comision')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarComision()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL MARCAR COBRO COMO PAGADO (v46.5) ═══ -->
+<div class="modal-overlay" id="modal-marcar-pagado">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h2>💰 Marcar Cobro Como Pagado</h2>
+      <button class="modal-close" onclick="cerrarModal('modal-marcar-pagado')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Medio de pago</label>
+          <select id="mp-medio">
+            <option>Efectivo</option><option>Transferencia</option><option>Tarjeta Credito</option><option>Tarjeta Debito</option><option>Cheque</option><option>PSE</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Fecha de pago</label><input type="date" id="mp-fecha"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>Referencia (opcional)</label><input id="mp-referencia" placeholder="N° de comprobante, transacción, etc."></div>
+      </div>
+      <div style="border-top:1px solid var(--bdr);margin:16px 0 0;padding-top:14px;">
+        <div style="font-size:11px;font-weight:800;color:var(--ciel);letter-spacing:1px;margin-bottom:10px;">COMISIÓN A GENERAR — PENDIENTE POR COBRAR</div>
+        <div class="form-grid">
+          <div class="form-group" style="grid-column:1/-1"><label>Compañía / corretaje que paga la comisión</label>
+            <input id="mp-pagador" placeholder="Ej: SURA, o un corretaje intermediario como Acierto" list="mp-pagador-list">
+            <datalist id="mp-pagador-list"></datalist>
+          </div>
+          <div class="form-group"><label>Valor comisión</label><input type="number" id="mp-valor-comision" placeholder="0"></div>
+          <div class="form-group"><label>% Comisión (opcional)</label><input type="number" id="mp-pct-comision" step="0.1" placeholder="0"></div>
+        </div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px;">Si el valor de comisión es $0, no se generará registro en la planilla de comisiones.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-marcar-pagado')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarMarcarPagado()">✅ Confirmar Pago</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL MARCAR COMISIÓN COMO COBRADA (v46.5) ═══ -->
+<div class="modal-overlay" id="modal-cobrar-comision">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <h2>✅ Marcar Comisión Cobrada</h2>
+      <button class="modal-close" onclick="cerrarModal('modal-cobrar-comision')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>Mes de cobro</label><input type="month" id="cc-mes"></div>
+      <div class="form-group"><label>Fecha exacta (opcional)</label><input type="date" id="cc-fecha"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-cobrar-comision')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarCobrarComision()">💾 Confirmar</button>
     </div>
   </div>
 </div>
@@ -4746,6 +4843,7 @@ function mapCobroDesdeSupabase(row) {
     aseguradora: poliza ? poliza.aseguradora : '',
     ramo: poliza ? poliza.ramo : '',
     poliza_estado: poliza ? poliza.estado : '',
+    estado: row.estado || '', // v46.5: se usa para distinguir cobros ya Pagados en la lista y filtros
     marcado_no_vigente: !!row.marcado_no_vigente,
     nombre_cliente: cliente ? `${cliente.nombre} ${cliente.apellidos||''}`.trim() : '',
     documento_cliente: cliente ? cliente.numero_documento : '',
@@ -5045,13 +5143,17 @@ function filtrarCobros() {
     const txt = `${c.nombre_cliente||''} ${c.numero_poliza||''} ${c.aseguradora||''} ${c.documento_cliente||''}`.toLowerCase();
     const dias = parseFloat(c.dias_vencidos||0);
     const noVigente = !!c.marcado_no_vigente;
+    const pagada = c.estado === 'Pagada';
     // 'cartera-activa' — v46.4 (18-sep-2026): vista por defecto al entrar al módulo. Solo cartera
     // real y reciente (al día o hasta 60 días vencidos); todo lo demás (61-365d, y lo marcado como
     // no vigente por pasar de 365d) queda oculto acá, visible solo si cambian el filtro a otra opción.
-    const matchV = venc === 'cartera-activa' ? (dias <= 60 && !noVigente)
+    // v46.5 (19-sep-2026): un cobro ya marcado "Pagada" se saca de cartera-activa/vencidos/al-dia —
+    // solo se ve en "Pagados" o en "Todos", para que al marcar pagado desaparezca de pendientes.
+    const matchV = venc === 'cartera-activa' ? (dias <= 60 && !noVigente && !pagada)
+      : venc === 'pagados' ? pagada
       : !venc ? true
-      : venc === 'vencidos' ? dias > 0
-      : venc === 'al-dia' ? dias <= 0
+      : venc === 'vencidos' ? (dias > 0 && !pagada)
+      : venc === 'al-dia' ? (dias <= 0 && !pagada)
       : venc === 'no-vigente' ? noVigente
       : true;
     return (!q || txt.includes(q)) && (!aseg || c.aseguradora===aseg) && (!vend || c.vendedor===vend) && matchV;
@@ -5077,7 +5179,13 @@ function renderCobros() {
     const etiquetaPoliza = c.poliza_estado && c.poliza_estado !== 'Vigente'
       ? `<span title="Estado de la póliza en el sistema — tú decides si aplica marcar el cobro" style="background:rgba(245,158,11,.15);color:var(--warn);font-size:9px;font-weight:900;padding:2px 6px;border-radius:10px;margin-left:4px;">${c.poliza_estado}</span>`
       : '';
-    const botonRecordar = noVigente
+    const pagada = c.estado === 'Pagada';
+    const botonRecordar = pagada
+      ? `<div style="background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:4px 10px;color:var(--ok);font-size:11px;font-weight:800;text-align:center;width:100%;">
+          ✅ Pagada
+        </div>
+        <div style="font-size:10px;color:var(--t3);text-align:center;margin-top:3px;">${c.forma_pago||''}</div>`
+      : noVigente
       ? `<button id="btn-recordatorio-${c._id}" disabled title="Marcado como no vigente — clic en 'Reactivar' para volver a habilitar el recordatorio"
           style="background:rgba(122,160,196,.12);border:1px solid var(--bdr);border-radius:8px;padding:4px 10px;color:var(--t3);font-size:11px;font-weight:700;cursor:not-allowed;white-space:nowrap;width:100%;">
           🚫 No vigente
@@ -5087,7 +5195,11 @@ function renderCobros() {
           style="background:rgba(10,115,85,.12);border:1px solid rgba(10,115,85,.3);border-radius:8px;padding:4px 10px;color:var(--turq);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;width:100%;">
           📨 Recordar
         </button>
-        <div onclick="event.stopPropagation();toggleNoVigenteCobro('${c._id}', true)" style="font-size:10px;color:var(--t3);cursor:pointer;text-align:center;margin-top:3px;">Marcar no vigente</div>`;
+        <div style="display:flex;gap:6px;justify-content:center;margin-top:3px;">
+          <span onclick="event.stopPropagation();abrirMarcarPagado('${c._id}')" style="font-size:10px;color:var(--ok);cursor:pointer;font-weight:700;">💰 Pagado</span>
+          <span style="color:var(--t3);font-size:10px;">·</span>
+          <span onclick="event.stopPropagation();toggleNoVigenteCobro('${c._id}', true)" style="font-size:10px;color:var(--t3);cursor:pointer;">No vigente</span>
+        </div>`;
     return `
     <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 1fr 1fr 1fr 130px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;transition:background .15s;${noVigente?'opacity:.7;':''}"
       onmouseenter="this.style.background='rgba(47,77,138,.1)'"
@@ -5148,6 +5260,88 @@ async function enviarRecordatorioCobro(cobroId) {
     showToast('Error al enviar: ' + e.message, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '📨 Recordar'; }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MARCAR COBRO COMO PAGADO (v46.5) — Efectivo/Transferencia/etc.
+// Actualiza el cobro en Supabase y genera automáticamente su registro
+// de comisión "pendiente por cobrar" en la planilla real de comisiones.
+// ══════════════════════════════════════════════════════════════════
+let _cobroMarcarPagadoId = null;
+
+function abrirMarcarPagado(cobroId) {
+  const c = cobros.find(x => x._id === cobroId);
+  if (!c) return;
+  _cobroMarcarPagadoId = cobroId;
+  document.getElementById('mp-medio').value = 'Efectivo';
+  document.getElementById('mp-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('mp-referencia').value = '';
+  document.getElementById('mp-pagador').value = c.aseguradora || '';
+  const valorComisionExistente = parseFloat(String(c.comision_recibir||0).replace(/[^0-9.-]/g,'')) || '';
+  document.getElementById('mp-valor-comision').value = valorComisionExistente;
+  document.getElementById('mp-pct-comision').value = '';
+  const dlPagador = document.getElementById('mp-pagador-list');
+  if (dlPagador) {
+    const aseguradoras = [...new Set(polizas.map(p=>p.aseguradora).filter(Boolean))].sort();
+    dlPagador.innerHTML = aseguradoras.map(a=>`<option value="${a}">`).join('');
+  }
+  abrirModal('modal-marcar-pagado');
+}
+
+async function confirmarMarcarPagado() {
+  if (!_cobroMarcarPagadoId) return;
+  const c = cobros.find(x => x._id === _cobroMarcarPagadoId);
+  if (!c) return;
+  const medio = document.getElementById('mp-medio').value;
+  const fecha = document.getElementById('mp-fecha').value || new Date().toISOString().slice(0,10);
+  const referencia = document.getElementById('mp-referencia').value.trim() || null;
+  const pagador = document.getElementById('mp-pagador').value.trim() || c.aseguradora || null;
+  const valorComision = parseFloat(document.getElementById('mp-valor-comision').value) || 0;
+  const pctComision = parseFloat(document.getElementById('mp-pct-comision').value) || null;
+
+  const btn = document.querySelector('#modal-marcar-pagado button[onclick="confirmarMarcarPagado()"]');
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  try {
+    const { error: errCobro } = await sb.from('cobros').update({
+      estado: 'Pagada',
+      fecha_pago: fecha,
+      medio_pago: medio,
+      referencia_pago: referencia,
+    }).eq('id', _cobroMarcarPagadoId);
+    if (errCobro) throw errCobro;
+
+    if (valorComision > 0) {
+      const clienteId = getClienteIdPorCedula(c.documento_cliente);
+      const polizaId = getPolizaIdPorNumero(c.numero_poliza);
+      const { error: errCom } = await sb.from('comisiones').insert({
+        cobro_id: _cobroMarcarPagadoId,
+        poliza_id: polizaId || null,
+        cliente_id: clienteId || null,
+        numero_poliza: c.numero_poliza || null,
+        nombre_cliente: c.nombre_cliente || null,
+        aseguradora: c.aseguradora || null,
+        pagador: pagador,
+        ramo: c.ramo || null,
+        valor_comision: valorComision,
+        porcentaje_comision: pctComision,
+        estado: 'pendiente_por_cobrar',
+        agente_id: SESION_ACTUAL?.agente_id || null,
+      });
+      if (errCom) throw errCom;
+    }
+
+    cerrarModal('modal-marcar-pagado');
+    await cargarCobrosDesdeSupabase();
+    actualizarStatsCobros();
+    if (_polizaDetalleId) setTabDetallePoliza('cobros');
+    showToast(valorComision > 0 ? '✅ Cobro marcado como pagado y comisión registrada' : '✅ Cobro marcado como pagado');
+  } catch (e) {
+    showToast('Error al marcar como pagado: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '✅ Confirmar Pago'; }
   }
 }
 
@@ -5739,6 +5933,7 @@ function renderDetallePolizaInfo(p) {
     ${p.observaciones?`<div class="dp-section"><div class="dp-section-title">Observaciones</div><div style="font-size:12px;color:var(--t2);line-height:1.6;">${p.observaciones}</div></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px;padding:0 0 16px;">
       <button class="btn btn-success" style="flex:1;" onclick="renovarPoliza('${p._id}')">🔄 Renovar</button>
+      <button class="btn btn-outline" style="flex:1;" onclick="enviarAvisoPoliza('${p._id}')" title="Envío manual — tú decides cuándo avisarle al cliente sobre esta póliza">📨 Recordar</button>
       <button class="btn btn-danger" onclick="eliminarPoliza('${p._id}')">🗑️</button>
     </div>
   </div>`;
@@ -5765,13 +5960,17 @@ function renderDetallePolizaCobros(p) {
     </div>
     ${relacionados.map(c => {
       const dias = parseFloat(c.dias_vencidos||0);
+      const pagada = c.estado === 'Pagada';
       return `<div style="background:var(--bg3);border:1px solid var(--bdr);border-radius:10px;padding:10px 14px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span style="font-size:12px;font-weight:700;color:var(--t1);">${fmtMoneda(c.prima_total_pago||c.prima_neta)}</span>
-          <span style="font-size:11px;font-weight:700;color:${dias>0?'var(--err)':'var(--ok)'};">${dias>0?dias+' días vencido':'Al día'}</span>
+          <span style="font-size:11px;font-weight:700;color:${pagada?'var(--ok)':dias>0?'var(--err)':'var(--ok)'};">${pagada?'✅ Pagada':dias>0?dias+' días vencido':'Al día'}</span>
         </div>
         <div style="font-size:11px;color:var(--t3);">${c.vendedor||''} · ${fmtFecha(c.fecha_limite)}</div>
-        <div style="font-size:11px;color:var(--warn);margin-top:2px;">Saldo: ${fmtMoneda(c.saldo_oficina)}</div>
+        ${pagada
+          ? `<div style="font-size:11px;color:var(--t3);margin-top:2px;">${c.forma_pago||''}${c.forma_pago&&c.numero_factura?' · ':''}${c.numero_factura||''}</div>`
+          : `<div style="font-size:11px;color:var(--warn);margin-top:2px;">Saldo: ${fmtMoneda(c.saldo_oficina)}</div>
+             <button class="btn btn-success" style="width:100%;margin-top:8px;font-size:11px;padding:6px 10px;" onclick="abrirMarcarPagado('${c._id}')">💰 Marcar Pagado (Efectivo/Transferencia)</button>`}
       </div>`;
     }).join('')}
   </div>`;
@@ -6189,23 +6388,11 @@ async function guardarPoliza() {
     cerrarModal('modal-poliza');
     setTimeout(() => sincronizarTareasAutomaticas(), 300);
 
-    // Mensaje de confirmación por WhatsApp — "golpe de credibilidad" apenas queda activa/renovada la póliza.
-    // v46.3 (18-sep-2026): antes se disparaba en CUALQUIER guardado (incluida una edición de rutina
-    // como agregar un beneficiario), así que el cliente podía recibir "¡ya renovamos tu póliza!" sin que
-    // hubiera pasado nada nuevo. Ahora solo se envía cuando de verdad hay un evento real:
-    //  (a) la póliza se acaba de crear, o
-    //  (b) es una edición donde la fecha de fin realmente cambió (una renovación genuina).
-    // Editar beneficiarios, observaciones, comisiones, etc. sin tocar la vigencia ya NO envía el aviso.
-    const esCreacionNueva = !editandoPolizaId;
-    const esRenovacionReal = !!polizaOriginalAntesDeGuardar && polizaOriginalAntesDeGuardar.fecha_fin !== data.fecha_fin;
-    if (polizaIdGuardada && (esCreacionNueva || esRenovacionReal)) {
-      const esNueva = (data.nueva_renovada || 'Nueva') !== 'Renovada';
-      fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + (await sb.auth.getSession()).data.session.access_token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modo: 'poliza_evento', poliza_id: polizaIdGuardada, es_nueva: esNueva }),
-      }).catch(e => console.warn('No se pudo enviar el WhatsApp de confirmación:', e));
-    }
+    // v46.5 (19-sep-2026): el aviso de WhatsApp por creación/renovación de póliza YA NO se envía
+    // automáticamente al guardar. Quedó a voluntad del humano — igual que el botón "📨 Recordar"
+    // de Cobros — disponible en la pestaña Info del detalle de la póliza (enviarAvisoPoliza()).
+    // Antes (v46.3) se disparaba solo, aquí, cuando había creación o cambio real de fecha_fin.
+
   } catch (e) {
     console.error('Error guardando póliza en Supabase:', e);
     showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
@@ -6226,6 +6413,30 @@ async function eliminarPoliza(id) {
   } catch (e) {
     console.error('Error eliminando póliza en Supabase:', e);
     showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
+}
+
+// Envío manual del aviso de WhatsApp de creación/renovación de póliza — botón "📨 Recordar"
+// en la pestaña Info del detalle de póliza. v46.5 (19-sep-2026): reemplaza el disparo automático
+// que tenía guardarPoliza() — ahora es 100% decisión del humano, igual que en Cobros.
+async function enviarAvisoPoliza(polizaId) {
+  const p = polizas.find(x => x._id === polizaId);
+  if (!p) return;
+  const nombreCliente = ((p.nombres_cliente||'') + ' ' + (p.apellidos_cliente||'')).trim() || 'este cliente';
+  if (!confirm(`¿Enviar por WhatsApp el aviso de póliza a ${nombreCliente}?`)) return;
+  try {
+    const esNueva = (p.nueva_renovada || 'Nueva') !== 'Renovada';
+    const { data: sesion } = await sb.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + sesion.session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modo: 'poliza_evento', poliza_id: polizaId, es_nueva: esNueva }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al enviar');
+    showToast('Aviso enviado por WhatsApp');
+  } catch (e) {
+    showToast('Error al enviar: ' + e.message, 'err');
   }
 }
 
@@ -6364,7 +6575,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.4';
+const _CRM_VERSION = 'v46.5';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -6400,7 +6611,7 @@ let editandoComisionId = null;
 function guardarComisionesLS() { localStorage.setItem('sekiury_comisiones', JSON.stringify(comisiones_tabla)); }
 
 function setTabComision(tab) {
-  ['tabla','resumen','aseguradora'].forEach(t => {
+  ['tabla','resumen','aseguradora','planilla'].forEach(t => {
     document.getElementById('tab-content-'+t).style.display = t===tab?'block':'none';
     const btn = document.getElementById('tab-'+t+'-com');
     if (btn) {
@@ -6410,6 +6621,100 @@ function setTabComision(tab) {
   });
   if (tab==='resumen') renderResumenAsesores();
   if (tab==='aseguradora') renderResumenAseguradoras();
+  if (tab==='planilla') cargarComisionesDesdeSupabase();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PLANILLA REAL DE COMISIONES (v46.5) — tabla `comisiones` en Supabase.
+// Se alimenta automáticamente al marcar un cobro como pagado (ver
+// confirmarMarcarPagado). Esta sección es solo lectura/gestión de estado:
+// marcar como "cobrada" y asignarle el mes, para reportes mensuales futuros.
+// ══════════════════════════════════════════════════════════════════
+let comisionesReales = [];
+let filtrados_plc = [];
+let _comisionCobrarId = null;
+
+async function cargarComisionesDesdeSupabase() {
+  try {
+    const { data, error } = await sb.from('comisiones').select('*').order('created_at', { ascending: false });
+    if (error) { console.error('Error cargando comisiones:', error.message); return; }
+    comisionesReales = data || [];
+    filtrarPlanillaComisiones();
+  } catch (e) {
+    console.error('Error de red cargando comisiones:', e);
+    showToast('No se pudo sincronizar la planilla de comisiones con Supabase', 'err');
+  }
+}
+
+function filtrarPlanillaComisiones() {
+  const estado = document.getElementById('plc-filtro-estado')?.value || '';
+  const pagador = document.getElementById('plc-filtro-pagador')?.value || '';
+  filtrados_plc = comisionesReales.filter(c => (!estado || c.estado === estado) && (!pagador || c.pagador === pagador));
+  renderPlanillaComisiones();
+  actualizarStatsPlanillaComisiones();
+}
+
+function actualizarStatsPlanillaComisiones() {
+  const pendiente = comisionesReales.filter(c=>c.estado==='pendiente_por_cobrar').reduce((s,c)=>s+(parseFloat(c.valor_comision)||0),0);
+  const mesActual = new Date().toISOString().slice(0,7);
+  const cobradoMes = comisionesReales.filter(c=>c.estado==='cobrada' && c.mes_cobro===mesActual).reduce((s,c)=>s+(parseFloat(c.valor_comision)||0),0);
+  const elPend = document.getElementById('plc-pend'); if (elPend) elPend.textContent = fmtMoneda(pendiente);
+  const elCob = document.getElementById('plc-cobrado-mes'); if (elCob) elCob.textContent = fmtMoneda(cobradoMes);
+  const elTot = document.getElementById('plc-total'); if (elTot) elTot.textContent = comisionesReales.length;
+  const pagadores = [...new Set(comisionesReales.map(c=>c.pagador).filter(Boolean))].sort();
+  const selP = document.getElementById('plc-filtro-pagador');
+  if (selP) {
+    const cur = selP.value;
+    selP.innerHTML = '<option value="">Todos los pagadores</option>' + pagadores.map(p=>`<option value="${p}">${p}</option>`).join('');
+    if (cur) selP.value = cur;
+  }
+}
+
+function renderPlanillaComisiones() {
+  const tb = document.getElementById('tabla-planilla-comisiones');
+  if (!tb) return;
+  if (!filtrados_plc.length) {
+    tb.innerHTML = '<div class="empty-state"><div class="ei">🧾</div><div class="et">Sin comisiones en este filtro</div></div>';
+    return;
+  }
+  tb.innerHTML = filtrados_plc.map(c => `
+    <div style="display:grid;grid-template-columns:1.8fr 1.3fr 1.3fr 1fr 1fr 1fr 140px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--t1);">${c.nombre_cliente||'—'}</div>
+        <div style="font-size:10px;color:var(--t3);">${c.numero_poliza||''}</div>
+      </div>
+      <div style="font-size:12px;color:var(--t1);">${c.aseguradora||'—'}</div>
+      <div style="font-size:12px;color:var(--t2);">${c.pagador||'—'}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--turq);">${fmtMoneda(c.valor_comision)}</div>
+      <div style="font-size:11px;font-weight:800;color:${c.estado==='cobrada'?'var(--ok)':'var(--warn)'};">${c.estado==='cobrada'?'✅ Cobrada':'⏳ Pendiente'}</div>
+      <div style="font-size:11px;color:var(--t3);">${c.mes_cobro||'—'}</div>
+      <div>${c.estado==='pendiente_por_cobrar'
+        ? `<button class="btn btn-success" style="font-size:11px;padding:5px 10px;" onclick="abrirCobrarComision('${c.id}')">✅ Marcar cobrada</button>`
+        : `<span style="font-size:10px;color:var(--t3);">${fmtFecha(c.fecha_cobro)}</span>`}</div>
+    </div>`).join('');
+}
+
+function abrirCobrarComision(id) {
+  _comisionCobrarId = id;
+  document.getElementById('cc-mes').value = new Date().toISOString().slice(0,7);
+  document.getElementById('cc-fecha').value = new Date().toISOString().slice(0,10);
+  abrirModal('modal-cobrar-comision');
+}
+
+async function confirmarCobrarComision() {
+  if (!_comisionCobrarId) return;
+  const mes = document.getElementById('cc-mes').value;
+  const fecha = document.getElementById('cc-fecha').value || null;
+  if (!mes) { showToast('Selecciona el mes de cobro','err'); return; }
+  try {
+    const { error } = await sb.from('comisiones').update({ estado: 'cobrada', mes_cobro: mes, fecha_cobro: fecha }).eq('id', _comisionCobrarId);
+    if (error) throw error;
+    cerrarModal('modal-cobrar-comision');
+    await cargarComisionesDesdeSupabase();
+    showToast('Comisión marcada como cobrada');
+  } catch (e) {
+    showToast('Error: ' + e.message, 'err');
+  }
 }
 
 function calcularComisionPolizas(aseguradora, ramo, base) {
