@@ -6424,9 +6424,12 @@ async function enviarAvisoPoliza(polizaId) {
   const p = polizas.find(x => x._id === polizaId);
   if (!p) return;
   const nombreCliente = ((p.nombres_cliente||'') + ' ' + (p.apellidos_cliente||'')).trim() || 'este cliente';
-  if (!confirm(`¿Enviar por WhatsApp el aviso de póliza a ${nombreCliente}?`)) return;
+  const esNueva = (p.nueva_renovada || 'Nueva') !== 'Renovada';
+  // v46.7: el diálogo ahora dice cuál plantilla va a salir (nueva vs. renovada),
+  // para que quien hace clic sepa exactamente qué mensaje le va a llegar al cliente.
+  const tipoTexto = esNueva ? 'de póliza NUEVA' : 'de RENOVACIÓN de póliza';
+  if (!confirm(`¿Enviar por WhatsApp el aviso ${tipoTexto} a ${nombreCliente}?`)) return;
   try {
-    const esNueva = (p.nueva_renovada || 'Nueva') !== 'Renovada';
     const { data: sesion } = await sb.auth.getSession();
     const res = await fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
       method: 'POST',
@@ -6435,7 +6438,11 @@ async function enviarAvisoPoliza(polizaId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al enviar');
-    showToast('Aviso enviado por WhatsApp');
+    if (data.omitido) {
+      showToast('Ya se le había enviado este aviso hoy — no se repite', 'ok');
+    } else {
+      showToast('Aviso enviado por WhatsApp');
+    }
   } catch (e) {
     showToast('Error al enviar: ' + e.message, 'err');
   }
@@ -6603,7 +6610,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.6';
+const _CRM_VERSION = 'v46.7';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -7178,9 +7185,11 @@ function renovarPoliza(id) {
     <div style="margin-bottom:6px;"><strong style="color:#fff;">Cliente:</strong> ${p.nombres_cliente||''} ${p.apellidos_cliente||''}</div>
     <div style="margin-bottom:6px;"><strong style="color:#fff;">Ramo:</strong> ${p.ramo||'—'}${p.subramo?' · '+p.subramo:''}</div>
     <div><strong style="color:#fff;">Vigencia actual:</strong> ${fmtFecha(p.fecha_inicio)} → ${fmtFecha(p.fecha_fin)}</div>`;
-  // Calcular nuevas fechas +1 año
+  // Calcular nuevas fechas +1 año — parseFechaLocal() en vez de new Date() directo
+  // (regla técnica #5: new Date("YYYY-MM-DD") se interpreta en UTC y corre la
+  // fecha un día en Colombia UTC-5).
   const hoy = new Date();
-  const finActual = p.fecha_fin ? new Date(p.fecha_fin) : hoy;
+  const finActual = p.fecha_fin ? parseFechaLocal(p.fecha_fin) : hoy;
   const nuevaIni = new Date(finActual);
   nuevaIni.setDate(nuevaIni.getDate() + 1);
   const nuevaFin = new Date(nuevaIni);
@@ -7296,15 +7305,14 @@ async function confirmarRenovacion() {
     showToast('Póliza renovada exitosamente 🔄');
     setTimeout(() => sincronizarTareasAutomaticas(), 300);
 
-    // Mensaje de confirmación por WhatsApp — agregado en v46.2 (18-sep-2026): antes solo lo
-    // enviaba guardarPoliza() (formulario normal), el asistente "🔄 Renovar" nunca lo disparaba.
-    if (polizaRenovada?.id) {
-      fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + (await sb.auth.getSession()).data.session.access_token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modo: 'poliza_evento', poliza_id: polizaRenovada.id, es_nueva: false }),
-      }).catch(e => console.warn('No se pudo enviar el WhatsApp de confirmación de renovación:', e));
-    }
+    // v46.7 (19-sep-2026): FIX — aquí había un fetch que mandaba el WhatsApp de
+    // "póliza renovada" automáticamente al confirmar, sin que nadie lo pidiera en
+    // ese momento. Se coló en v46.2 y sobrevivió a la limpieza de v46.5 (esa solo
+    // tocó guardarPoliza()). Iba contra la regla de Alberny: ningún proceso distinto
+    // a cumpleaños dispara solo. Ahora, igual que con una póliza nueva, el aviso se
+    // manda desde el botón manual "📨 Recordar" en la pestaña Info del detalle de
+    // la póliza renovada (la nueva póliza queda con nueva_renovada='Renovada', así
+    // que enviarAvisoPoliza() ya sabe usar la plantilla de "renovada" ahí).
   } catch (e) {
     console.error('Error renovando póliza en Supabase:', e);
     showToast('Error al renovar en Supabase: ' + (e.message||''), 'err');
