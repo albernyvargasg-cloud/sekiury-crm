@@ -720,6 +720,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div style="display:flex;gap:8px;">
       <button class="btn btn-success" onclick="abrirImportPolizas()">📥 Importar Excel</button>
       <button class="btn btn-outline" onclick="exportarPolizas()">📤 Exportar</button>
+      <button class="btn btn-outline" onclick="procesarRenovacionesManual()" title="Envío manual — revisa todas las pólizas a &lt;=15 días de vencer y avisa por WhatsApp a las que no se les haya avisado hoy">📨 Procesar Renovaciones</button>
       <button class="btn btn-primary" onclick="abrirNuevaPoliza()">＋ Nueva Póliza</button>
     </div>
   </div>
@@ -6440,6 +6441,33 @@ async function enviarAvisoPoliza(polizaId) {
   }
 }
 
+// Envío manual masivo de avisos de renovación — botón "📨 Procesar Renovaciones"
+// en el módulo Pólizas. v46.6 (19-sep-2026): antes corría sola por el cron diario;
+// Alberny no la había aprobado para eso, así que quedó igual que Cobros y Pólizas —
+// 100% a voluntad del humano. Revisa todas las pólizas vigentes a <=15 días de
+// vencer y les avisa por WhatsApp (una sola vez por día por póliza).
+async function procesarRenovacionesManual() {
+  if (!confirm('¿Procesar renovaciones ahora?\n\nSe revisarán todas las pólizas vigentes a 15 días o menos de vencer y se enviará un WhatsApp de recordatorio a cada cliente que aún no lo haya recibido hoy.')) return;
+  const btn = document.querySelector('#page-polizas button[onclick="procesarRenovacionesManual()"]');
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Procesando...'; }
+  try {
+    const { data: sesion } = await sb.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/notificaciones-whatsapp`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + sesion.session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modo: 'renovaciones_manual' }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al procesar renovaciones');
+    showToast(`✅ Renovaciones: ${data.enviados||0} enviados, ${data.omitidos||0} ya avisados hoy, ${data.fallidos||0} fallidos, ${data.sin_celular||0} sin celular`);
+  } catch (e) {
+    showToast('Error al procesar renovaciones: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal || '📨 Procesar Renovaciones'; }
+  }
+}
+
 function abrirImportPolizas() {
   importDataPolizas = [];
   document.getElementById('import-preview-polizas').innerHTML = '';
@@ -6575,7 +6603,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.5';
+const _CRM_VERSION = 'v46.6';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
