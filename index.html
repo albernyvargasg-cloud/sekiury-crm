@@ -2043,8 +2043,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group" style="grid-column:1/-1"><label>Nombre *</label><input id="cfg-aseg-nombre" placeholder="Nombre oficial de la aseguradora"></div>
+        <div class="form-group"><label>Nombre Corto *</label><input id="cfg-aseg-nombre-corto" placeholder="Ej: Bolívar, HDI, SURA"></div>
         <div class="form-group"><label>NIT</label><input id="cfg-aseg-nit" placeholder="Ej: 860002184-6"></div>
         <div class="form-group"><label>Código Intermediario</label><input id="cfg-aseg-codigo" placeholder="Ej: 9919"></div>
+        <div class="form-group"><label>📞 Línea de Asistencia</label><input id="cfg-aseg-linea-asist" placeholder="Ej: #322"></div>
         <div class="form-group" style="grid-column:1/-1"><label>Email de Facturación</label><input id="cfg-aseg-email" placeholder="factura@aseguradora.com" type="email"></div>
         <div class="form-group"><label>% IVA</label><input id="cfg-aseg-iva" type="number" placeholder="19" value="19"></div>
         <div class="form-group"><label>% Retención</label><input id="cfg-aseg-retencion" type="number" placeholder="11" value="11"></div>
@@ -2131,8 +2133,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
         <div class="form-group"><label>Rol</label>
           <select id="cfg-usr-rol">
             <option value="admin">Administrador</option>
-            <option value="asesor">Asesor</option>
-            <option value="operaciones">Operaciones</option>
+            <option value="agente">Asesor</option>
           </select>
         </div>
         <div class="form-group"><label>Especialidad</label>
@@ -3099,7 +3100,7 @@ function navTo(page, el) {
   cerrarDetalle();
   if (page === 'informes') setTimeout(() => renderInformes(), 50);
   if (page === 'pipeline') setTimeout(() => initPipeline(), 50);
-  if (page === 'config') setTimeout(() => { initConfig(); setCfgTab('aseg'); }, 50);
+  if (page === 'config') setTimeout(async () => { await initConfig(); setCfgTab('aseg'); }, 50);
   if (page === 'legal') setTimeout(() => { setLegalTab('casos'); renderLegalKpis(); }, 50);
   if (page === 'motor-ia') setTimeout(() => initMotorIA(), 150);
   if (page === 'whatsapp') setTimeout(() => cargarBandejaWhatsApp(), 50);
@@ -5481,7 +5482,7 @@ let polizas = seedPolizas();
 // ══════════════════════════════════════════════════════════════════════════════
 // SINCRONIZACIÓN PÓLIZAS ↔ SUPABASE
 // ══════════════════════════════════════════════════════════════════════════════
-let ASEGURADORAS_CACHE = []; // [{id, nombre, nombre_corto}]
+let ASEGURADORAS_CACHE = []; // fila completa de Supabase: {id, nombre, nombre_corto, nit, codigo, email, linea_asistencia, pct_iva, pct_retencion, pct_ret_iva, pct_ret_ica, tiene_codigo, activa, ...}
 
 // Quita tildes/acentos y pasa a minúsculas, para comparar textos sin que las tildes rompan el match
 function normalizarTexto(s) {
@@ -5490,7 +5491,7 @@ function normalizarTexto(s) {
 
 async function cargarAseguradorasCache() {
   try {
-    const { data, error } = await sb.from('aseguradoras').select('id, nombre, nombre_corto');
+    const { data, error } = await sb.from('aseguradoras').select('*').order('nombre');
     if (error) { console.error('Error cargando aseguradoras:', error.message); return; }
     ASEGURADORAS_CACHE = data || [];
   } catch (e) { console.error('Error de red cargando aseguradoras:', e); }
@@ -6610,7 +6611,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.7';
+const _CRM_VERSION = 'v46.8';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -8237,71 +8238,40 @@ function initCocorretajeForm(p) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MÓDULO CONFIGURACIÓN
 // ══════════════════════════════════════════════════════════════════════════════
+// Aseguradoras, Ramos, Canales y Usuarios viven en Supabase (tablas aseguradoras/ramos/canales/agentes).
+// ASEGURADORAS_CACHE ya se carga al iniciar sesión (ver aplicarSesion → cargarPolizasDesdeSupabase → cargarAseguradorasCache).
+// Aquí se agregan los cachés propios de Ramos, Canales y Usuarios, y se reescribe todo el CRUD para leer/escribir en Supabase.
 
-// ── Storage keys ─────────────────────────────────────────────────────────────
-const CFG_ASEG_KEY     = 'sekiury_cfg_aseguradoras';
-const CFG_RAMOS_KEY    = 'sekiury_cfg_ramos';
-const CFG_CANALES_KEY  = 'sekiury_cfg_canales';
-const CFG_USUARIOS_KEY = 'sekiury_cfg_usuarios';
+let RAMOS_CFG_CACHE = [];   // filas de `ramos` con join a aseguradoras(nombre)
+let CANALES_CACHE   = [];   // filas de `canales`
+let USUARIOS_CACHE  = [];   // filas de `agentes`
 
-// ── Inicializar datos desde ASEGURADORAS_DATA y RAMOS_DATA si no existen ─────
-function initCfgData() {
-  // Aseguradoras
-  if (!localStorage.getItem(CFG_ASEG_KEY)) {
-    const aseguradoras = ASEGURADORAS_DATA.map(a => ({
-      _id: 'aseg_' + a.id,
-      nombre: a.nombre,
-      nit: a.nit || '',
-      email: a.email || '',
-      codigo: a.codigo || '',
-      pct_iva: (a.pct_iva * 100) || 0,
-      pct_retencion: (a.pct_retencion * 100) || 11,
-      pct_ret_iva: (a.pct_ret_iva * 100) || 0,
-      pct_ret_ica: (a.pct_ret_ica * 100) || 0,
-      tiene_codigo: true,
-      activa: true,
-    }));
-    localStorage.setItem(CFG_ASEG_KEY, JSON.stringify(aseguradoras));
-  }
-  // Ramos
-  if (!localStorage.getItem(CFG_RAMOS_KEY)) {
-    const ramos = RAMOS_DATA.map((r, i) => ({
-      _id: 'ramo_' + r.id + '_' + i,
-      aseguradora: r.aseguradora,
-      ramo: r.ramo,
-      subramo: r.subramo || '',
-      pct_comision: r.pct_comision * 100,
-      pct_iva: r.pct_iva * 100,
-    }));
-    localStorage.setItem(CFG_RAMOS_KEY, JSON.stringify(ramos));
-  }
-  // Canales
-  if (!localStorage.getItem(CFG_CANALES_KEY)) {
-    const canales = [
-      { _id: 'canal_acierto', nombre: 'ACIERTO SEGUROS', aseguradoras: 'SEGUROS DE VIDA SURAMERICANA S.A, SEGUROS GENERALES SURAMERICANA S.A', pct_sekiury: 70, email: '', obs: 'Canal principal SURA Vida y Generales', activo: true },
-      { _id: 'canal_yenifer', nombre: 'YENIFER', aseguradoras: 'SEGUROS DE VIDA SURAMERICANA S.A, SEGUROS GENERALES SURAMERICANA S.A', pct_sekiury: 70, email: '', obs: 'Canal SURA plan Soy Deportista y RC', activo: true },
-      { _id: 'canal_natalia', nombre: 'Natalia Cortes', aseguradoras: 'SEGUROS COMERCIALES BOLIVAR S.A.', pct_sekiury: 70, email: '', obs: '', activo: true },
-      { _id: 'canal_claudia', nombre: 'Claudia', aseguradoras: 'HDI SEGUROS COLOMBIA S.A', pct_sekiury: 70, email: '', obs: '', activo: true },
-    ];
-    localStorage.setItem(CFG_CANALES_KEY, JSON.stringify(canales));
-  }
-  // Usuarios
-  if (!localStorage.getItem(CFG_USUARIOS_KEY)) {
-    const usuarios = [
-      { _id: 'usr_alberny', nombre: 'Alberny', apellidos: 'Vargas Gutiérrez', email: 'alberny@sekiury.com', rol: 'admin', especialidad: 'Vida/Legal/Deportivo', modo: 'dark', activo: true },
-      { _id: 'usr_johanna', nombre: 'Johanna', apellidos: 'Velásquez Montoya', email: 'johanna@sekiury.com', rol: 'operaciones', especialidad: 'Autos/PYMES', modo: 'light', activo: true },
-    ];
-    localStorage.setItem(CFG_USUARIOS_KEY, JSON.stringify(usuarios));
-  }
+async function cargarRamosCfgCache() {
+  try {
+    const { data, error } = await sb.from('ramos').select('*, aseguradoras(nombre)').order('ramo');
+    if (error) { console.error('Error cargando ramos:', error.message); return; }
+    RAMOS_CFG_CACHE = data || [];
+  } catch (e) { console.error('Error de red cargando ramos:', e); }
 }
 
-function getCfgAseguradoras() { return JSON.parse(localStorage.getItem(CFG_ASEG_KEY) || '[]'); }
-function getCfgRamos()        { return JSON.parse(localStorage.getItem(CFG_RAMOS_KEY) || '[]'); }
-function getCfgCanales()      { return JSON.parse(localStorage.getItem(CFG_CANALES_KEY) || '[]'); }
-function getCfgUsuarios()     { return JSON.parse(localStorage.getItem(CFG_USUARIOS_KEY) || '[]'); }
+async function cargarCanalesCache() {
+  try {
+    const { data, error } = await sb.from('canales').select('*').order('nombre');
+    if (error) { console.error('Error cargando canales:', error.message); return; }
+    CANALES_CACHE = data || [];
+  } catch (e) { console.error('Error de red cargando canales:', e); }
+}
+
+async function cargarUsuariosCache() {
+  try {
+    const { data, error } = await sb.from('agentes').select('*').order('nombre');
+    if (error) { console.error('Error cargando usuarios:', error.message); return; }
+    USUARIOS_CACHE = data || [];
+  } catch (e) { console.error('Error de red cargando usuarios:', e); }
+}
 
 // ── Tab navigation ────────────────────────────────────────────────────────────
-function setCfgTab(tab) {
+async function setCfgTab(tab) {
   ['aseg','ramos','canales','usuarios','apikey','conocimiento'].forEach(t => {
     const c = document.getElementById('cfg-content-'+t);
     const b = document.getElementById('cfg-tab-'+t);
@@ -8312,10 +8282,10 @@ function setCfgTab(tab) {
       b.classList.toggle('active', t === tab);
     }
   });
-  if (tab === 'aseg')     renderCfgAseguradoras();
-  if (tab === 'ramos')    renderCfgRamos();
-  if (tab === 'canales')  renderCfgCanales();
-  if (tab === 'usuarios') renderCfgUsuarios();
+  if (tab === 'aseg')     { if (ASEGURADORAS_CACHE.length === 0) await cargarAseguradorasCache(); renderCfgAseguradoras(); }
+  if (tab === 'ramos')    { await cargarRamosCfgCache(); renderCfgRamos(); }
+  if (tab === 'canales')  { await cargarCanalesCache(); renderCfgCanales(); }
+  if (tab === 'usuarios') { await cargarUsuariosCache(); renderCfgUsuarios(); }
   if (tab === 'conocimiento') initConocimientoIA();
 }
 
@@ -8376,11 +8346,11 @@ function getConocimientoIA(asesor) {
 }
 
 
-// ── ASEGURADORAS ─────────────────────────────────────────────────────────────
+// ── ASEGURADORAS (Supabase: tabla `aseguradoras`) ─────────────────────────────
 let _editAsegId = null;
 
 function renderCfgAseguradoras() {
-  const aseguradoras = getCfgAseguradoras();
+  const aseguradoras = ASEGURADORAS_CACHE;
   const tb = document.getElementById('cfg-tabla-aseg');
   if (!tb) return;
   if (!aseguradoras.length) {
@@ -8393,7 +8363,7 @@ function renderCfgAseguradoras() {
       onmouseleave="this.style.background='transparent'">
       <div>
         <div style="font-size:13px;font-weight:700;color:var(--t1);">${a.nombre}</div>
-        <div style="font-size:10px;color:var(--t3);">${a.tiene_codigo?'✅ Código propio':'🔄 Via intermediario'}</div>
+        <div style="font-size:10px;color:var(--t3);">${a.tiene_codigo?'✅ Código propio':'🔄 Via intermediario'}${a.linea_asistencia?' · 📞 '+a.linea_asistencia:''}</div>
       </div>
       <div style="font-size:12px;color:var(--t2);">${a.nit||'—'}</div>
       <div style="font-size:11px;color:var(--t2);">${a.email||'—'}</div>
@@ -8401,8 +8371,8 @@ function renderCfgAseguradoras() {
       <div style="font-size:13px;font-weight:700;color:var(--warn);">${a.pct_retencion||0}%</div>
       <div><span class="pill ${a.activa?'pill-ok':'pill-err'}">${a.activa?'Activa':'Inactiva'}</span></div>
       <div style="display:flex;gap:6px;">
-        <button class="act-btn edit" onclick="editarAseguradora('${a._id}')">✏️</button>
-        <button class="act-btn del" onclick="toggleAseguradora('${a._id}')" title="${a.activa?'Desactivar':'Activar'}">${a.activa?'⏸️':'▶️'}</button>
+        <button class="act-btn edit" onclick="editarAseguradora('${a.id}')">✏️</button>
+        <button class="act-btn del" onclick="toggleAseguradora('${a.id}')" title="${a.activa?'Desactivar':'Activar'}">${a.activa?'⏸️':'▶️'}</button>
       </div>
     </div>`).join('');
 }
@@ -8410,7 +8380,7 @@ function renderCfgAseguradoras() {
 function abrirNuevaAseguradora() {
   _editAsegId = null;
   document.getElementById('modal-cfg-aseg-title').textContent = '＋ Nueva Aseguradora';
-  ['cfg-aseg-nombre','cfg-aseg-nit','cfg-aseg-codigo','cfg-aseg-email'].forEach(id => {
+  ['cfg-aseg-nombre','cfg-aseg-nombre-corto','cfg-aseg-nit','cfg-aseg-codigo','cfg-aseg-email','cfg-aseg-linea-asist'].forEach(id => {
     const el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('cfg-aseg-iva').value = '19';
@@ -8422,13 +8392,15 @@ function abrirNuevaAseguradora() {
 }
 
 function editarAseguradora(id) {
-  const a = getCfgAseguradoras().find(x => x._id === id);
+  const a = ASEGURADORAS_CACHE.find(x => x.id === id);
   if (!a) return;
   _editAsegId = id;
   document.getElementById('modal-cfg-aseg-title').textContent = '✏️ Editar Aseguradora';
   document.getElementById('cfg-aseg-nombre').value = a.nombre || '';
+  document.getElementById('cfg-aseg-nombre-corto').value = a.nombre_corto || '';
   document.getElementById('cfg-aseg-nit').value = a.nit || '';
   document.getElementById('cfg-aseg-codigo').value = a.codigo || '';
+  document.getElementById('cfg-aseg-linea-asist').value = a.linea_asistencia || '';
   document.getElementById('cfg-aseg-email').value = a.email || '';
   document.getElementById('cfg-aseg-iva').value = a.pct_iva || 0;
   document.getElementById('cfg-aseg-retencion').value = a.pct_retencion || 0;
@@ -8438,94 +8410,111 @@ function editarAseguradora(id) {
   abrirModal('modal-cfg-aseg');
 }
 
-function guardarAseguradora() {
+async function guardarAseguradora() {
   const nombre = document.getElementById('cfg-aseg-nombre').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio', 'err'); return; }
+  let nombreCorto = document.getElementById('cfg-aseg-nombre-corto').value.trim();
+  if (!nombreCorto) { showToast('El nombre corto es obligatorio', 'err'); return; }
   const data = {
     nombre,
-    nit: document.getElementById('cfg-aseg-nit').value.trim(),
-    codigo: document.getElementById('cfg-aseg-codigo').value.trim(),
-    email: document.getElementById('cfg-aseg-email').value.trim(),
+    nombre_corto: nombreCorto,
+    nit: document.getElementById('cfg-aseg-nit').value.trim() || null,
+    codigo: document.getElementById('cfg-aseg-codigo').value.trim() || null,
+    linea_asistencia: document.getElementById('cfg-aseg-linea-asist').value.trim() || null,
+    email: document.getElementById('cfg-aseg-email').value.trim() || null,
     pct_iva: parseFloat(document.getElementById('cfg-aseg-iva').value) || 0,
     pct_retencion: parseFloat(document.getElementById('cfg-aseg-retencion').value) || 0,
     pct_ret_iva: parseFloat(document.getElementById('cfg-aseg-ret-iva').value) || 0,
     pct_ret_ica: parseFloat(document.getElementById('cfg-aseg-ret-ica').value) || 0,
     tiene_codigo: document.getElementById('cfg-aseg-tiene-codigo').value === 'si',
-    activa: true,
   };
-  const lista = getCfgAseguradoras();
-  if (_editAsegId) {
-    const idx = lista.findIndex(x => x._id === _editAsegId);
-    lista[idx] = { ...lista[idx], ...data };
-    showToast('Aseguradora actualizada ✅');
-  } else {
-    data._id = 'aseg_' + Date.now();
-    lista.push(data);
-    showToast('Aseguradora agregada ✅');
+  try {
+    if (_editAsegId) {
+      const { error } = await sb.from('aseguradoras').update(data).eq('id', _editAsegId);
+      if (error) throw error;
+      showToast('Aseguradora actualizada ✅');
+    } else {
+      data.activa = true;
+      const { error } = await sb.from('aseguradoras').insert(data);
+      if (error) throw error;
+      showToast('Aseguradora agregada ✅');
+    }
+    await cargarAseguradorasCache();
+    actualizarAseguradorasEnMemoria();
+    cerrarModal('modal-cfg-aseg');
+    renderCfgAseguradoras();
+  } catch (e) {
+    console.error('Error guardando aseguradora en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
   }
-  localStorage.setItem(CFG_ASEG_KEY, JSON.stringify(lista));
-  // Actualizar ASEGURADORAS_DATA en memoria para que los selects se actualicen
-  actualizarAseguradorasEnMemoria();
-  cerrarModal('modal-cfg-aseg');
-  renderCfgAseguradoras();
 }
 
-function toggleAseguradora(id) {
-  const lista = getCfgAseguradoras();
-  const idx = lista.findIndex(x => x._id === id);
-  lista[idx].activa = !lista[idx].activa;
-  localStorage.setItem(CFG_ASEG_KEY, JSON.stringify(lista));
-  renderCfgAseguradoras();
-  showToast(lista[idx].activa ? 'Aseguradora activada' : 'Aseguradora desactivada');
+async function toggleAseguradora(id) {
+  const a = ASEGURADORAS_CACHE.find(x => x.id === id);
+  if (!a) return;
+  try {
+    const { error } = await sb.from('aseguradoras').update({ activa: !a.activa }).eq('id', id);
+    if (error) throw error;
+    await cargarAseguradorasCache();
+    renderCfgAseguradoras();
+    showToast(!a.activa ? 'Aseguradora activada' : 'Aseguradora desactivada');
+  } catch (e) {
+    console.error('Error actualizando aseguradora en Supabase:', e);
+    showToast('Error al actualizar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
+// Sincroniza ASEGURADORAS_DATA (usado por los combos de Pólizas) con lo que hay en Supabase,
+// agregando las aseguradoras que aún no estén en el catálogo local de comisiones.
 function actualizarAseguradorasEnMemoria() {
-  // Agregar nuevas aseguradoras al array ASEGURADORAS_DATA en memoria
-  const guardadas = getCfgAseguradoras();
-  guardadas.forEach(a => {
+  ASEGURADORAS_CACHE.forEach(a => {
     if (!ASEGURADORAS_DATA.find(x => x.nombre === a.nombre)) {
       ASEGURADORAS_DATA.push({
-        id: Date.now(), nombre: a.nombre, nit: a.nit, email: a.email,
-        codigo: a.codigo, pct_retencion: a.pct_retencion/100,
-        pct_iva: a.pct_iva/100, pct_ret_iva: a.pct_ret_iva/100, pct_ret_ica: a.pct_ret_ica/100
+        id: a.id, nombre: a.nombre, nit: a.nit, email: a.email,
+        codigo: a.codigo, pct_retencion: (a.pct_retencion||0)/100,
+        pct_iva: (a.pct_iva||0)/100, pct_ret_iva: (a.pct_ret_iva||0)/100, pct_ret_ica: (a.pct_ret_ica||0)/100
       });
     }
   });
 }
 
-// ── RAMOS ─────────────────────────────────────────────────────────────────────
+// ── RAMOS (Supabase: tabla `ramos`, FK aseguradora_id → aseguradoras) ────────
 let _editRamoId = null;
 
 function renderCfgRamos() {
-  const ramos = getCfgRamos();
+  const ramos = RAMOS_CFG_CACHE;
   const filtroAseg = document.getElementById('cfg-filtro-aseg-ramo')?.value || '';
-  
-  // Poblar filtro
+
+  // Poblar filtro (una sola vez)
   const selFiltro = document.getElementById('cfg-filtro-aseg-ramo');
   if (selFiltro && selFiltro.options.length <= 1) {
-    const aseguradoras = [...new Set(ramos.map(r => r.aseguradora))].sort();
+    const aseguradoras = [...new Set(ramos.map(r => r.aseguradoras?.nombre).filter(Boolean))].sort();
     aseguradoras.forEach(a => {
       const o = document.createElement('option'); o.value = a; o.textContent = a;
       selFiltro.appendChild(o);
     });
   }
-  
-  const filtrados = filtroAseg ? ramos.filter(r => r.aseguradora === filtroAseg) : ramos;
+
+  const filtrados = filtroAseg ? ramos.filter(r => r.aseguradoras?.nombre === filtroAseg) : ramos;
   const tb = document.getElementById('cfg-tabla-ramos');
   if (!tb) return;
-  
+  if (!filtrados.length) {
+    tb.innerHTML = '<div class="empty-state"><div class="ei">📋</div><div class="et">Sin ramos registrados</div></div>';
+    return;
+  }
+
   tb.innerHTML = filtrados.map(r => `
     <div style="display:grid;grid-template-columns:2fr 1.5fr 1.5fr 1fr 1fr 80px;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bdr2);align-items:center;"
       onmouseenter="this.style.background='rgba(47,77,138,.08)'"
       onmouseleave="this.style.background='transparent'">
-      <div style="font-size:12px;color:var(--t2);">${r.aseguradora}</div>
+      <div style="font-size:12px;color:var(--t2);">${r.aseguradoras?.nombre||'—'}</div>
       <div style="font-size:13px;font-weight:700;color:var(--t1);">${r.ramo}</div>
       <div style="font-size:11px;color:var(--t3);">${r.subramo||'—'}</div>
       <div style="font-size:18px;font-weight:900;color:var(--ciel);">${parseFloat(r.pct_comision||0).toFixed(1)}%</div>
       <div style="font-size:13px;color:var(--t2);">${parseFloat(r.pct_iva||0).toFixed(0)}%</div>
       <div style="display:flex;gap:6px;">
-        <button class="act-btn edit" onclick="editarRamo('${r._id}')">✏️</button>
-        <button class="act-btn del" onclick="eliminarRamo('${r._id}')">🗑️</button>
+        <button class="act-btn edit" onclick="editarRamo('${r.id}')">✏️</button>
+        <button class="act-btn del" onclick="eliminarRamo('${r.id}')">🗑️</button>
       </div>
     </div>`).join('');
 }
@@ -8536,22 +8525,21 @@ function abrirNuevoRamo() {
   ['cfg-ramo-ramo','cfg-ramo-subramo'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
   document.getElementById('cfg-ramo-pct').value = '';
   document.getElementById('cfg-ramo-iva').value = '0';
-  // Poblar select aseguradora
   const sel = document.getElementById('cfg-ramo-aseg');
   sel.innerHTML = '<option value="">Seleccionar...</option>' +
-    getCfgAseguradoras().filter(a=>a.activa).map(a=>`<option value="${a.nombre}">${a.nombre}</option>`).join('');
+    ASEGURADORAS_CACHE.filter(a=>a.activa).map(a=>`<option value="${a.id}">${a.nombre}</option>`).join('');
   abrirModal('modal-cfg-ramo');
 }
 
 function editarRamo(id) {
-  const r = getCfgRamos().find(x => x._id === id);
+  const r = RAMOS_CFG_CACHE.find(x => x.id === id);
   if (!r) return;
   _editRamoId = id;
   document.getElementById('modal-cfg-ramo-title').textContent = '✏️ Editar Ramo';
   const sel = document.getElementById('cfg-ramo-aseg');
   sel.innerHTML = '<option value="">Seleccionar...</option>' +
-    getCfgAseguradoras().filter(a=>a.activa).map(a=>`<option value="${a.nombre}">${a.nombre}</option>`).join('');
-  sel.value = r.aseguradora || '';
+    ASEGURADORAS_CACHE.filter(a=>a.activa).map(a=>`<option value="${a.id}">${a.nombre}</option>`).join('');
+  sel.value = r.aseguradora_id || '';
   document.getElementById('cfg-ramo-ramo').value = r.ramo || '';
   document.getElementById('cfg-ramo-subramo').value = r.subramo || '';
   document.getElementById('cfg-ramo-pct').value = r.pct_comision || '';
@@ -8559,59 +8547,89 @@ function editarRamo(id) {
   abrirModal('modal-cfg-ramo');
 }
 
-function guardarRamo() {
-  const aseg = document.getElementById('cfg-ramo-aseg').value;
+async function guardarRamo() {
+  const asegId = document.getElementById('cfg-ramo-aseg').value;
   const ramo = document.getElementById('cfg-ramo-ramo').value.trim();
-  if (!aseg || !ramo) { showToast('Aseguradora y ramo son obligatorios', 'err'); return; }
+  if (!asegId || !ramo) { showToast('Aseguradora y ramo son obligatorios', 'err'); return; }
   const data = {
-    aseguradora: aseg, ramo,
-    subramo: document.getElementById('cfg-ramo-subramo').value.trim(),
+    aseguradora_id: asegId,
+    ramo,
+    subramo: document.getElementById('cfg-ramo-subramo').value.trim() || null,
     pct_comision: parseFloat(document.getElementById('cfg-ramo-pct').value) || 0,
     pct_iva: parseFloat(document.getElementById('cfg-ramo-iva').value) || 0,
   };
-  const lista = getCfgRamos();
-  if (_editRamoId) {
-    const idx = lista.findIndex(x => x._id === _editRamoId);
-    lista[idx] = { ...lista[idx], ...data };
-    showToast('Ramo actualizado ✅');
-  } else {
-    data._id = 'ramo_' + Date.now();
-    lista.push(data);
-    // Actualizar RAMOS_DATA en memoria
-    RAMOS_DATA.push({ id: Date.now(), ramo: data.ramo, subramo: data.subramo, aseguradora: data.aseguradora, pct_comision: data.pct_comision/100, pct_iva: data.pct_iva/100 });
-    showToast('Ramo agregado ✅');
+  try {
+    if (_editRamoId) {
+      const { error } = await sb.from('ramos').update(data).eq('id', _editRamoId);
+      if (error) throw error;
+      showToast('Ramo actualizado ✅');
+    } else {
+      const { error } = await sb.from('ramos').insert(data);
+      if (error) throw error;
+      showToast('Ramo agregado ✅');
+    }
+    await cargarRamosCfgCache();
+    actualizarRamosEnMemoria();
+    cerrarModal('modal-cfg-ramo');
+    renderCfgRamos();
+  } catch (e) {
+    console.error('Error guardando ramo en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
   }
-  localStorage.setItem(CFG_RAMOS_KEY, JSON.stringify(lista));
-  cerrarModal('modal-cfg-ramo');
-  renderCfgRamos();
 }
 
-function eliminarRamo(id) {
+async function eliminarRamo(id) {
   if (!confirm('¿Eliminar este ramo?')) return;
-  const lista = getCfgRamos().filter(x => x._id !== id);
-  localStorage.setItem(CFG_RAMOS_KEY, JSON.stringify(lista));
-  renderCfgRamos();
-  showToast('Ramo eliminado');
+  try {
+    const { error } = await sb.from('ramos').delete().eq('id', id);
+    if (error) throw error;
+    await cargarRamosCfgCache();
+    renderCfgRamos();
+    showToast('Ramo eliminado');
+  } catch (e) {
+    console.error('Error eliminando ramo en Supabase:', e);
+    showToast('Error al eliminar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
-// ── CANALES ───────────────────────────────────────────────────────────────────
+// Sincroniza RAMOS_DATA (catálogo de comisiones usado en el combo de Pólizas) con Supabase,
+// agregando los ramos configurados que aún no estén localmente.
+function actualizarRamosEnMemoria() {
+  RAMOS_CFG_CACHE.forEach(r => {
+    const asegNombre = r.aseguradoras?.nombre;
+    if (!asegNombre) return;
+    const existe = RAMOS_DATA.find(x => x.aseguradora === asegNombre && x.ramo === r.ramo && (x.subramo||'') === (r.subramo||''));
+    if (!existe) {
+      RAMOS_DATA.push({
+        id: r.id, ramo: r.ramo, subramo: r.subramo || '', aseguradora: asegNombre,
+        pct_comision: (r.pct_comision||0)/100, pct_iva: (r.pct_iva||0)/100
+      });
+    }
+  });
+}
+
+// ── CANALES (Supabase: tabla `canales`) ───────────────────────────────────────
 let _editCanalId = null;
 
 function renderCfgCanales() {
-  const canales = getCfgCanales();
+  const canales = CANALES_CACHE;
   const tb = document.getElementById('cfg-tabla-canales');
   if (!tb) return;
+  if (!canales.length) {
+    tb.innerHTML = '<div class="empty-state"><div class="ei">🔗</div><div class="et">Sin canales registrados</div></div>';
+    return;
+  }
   tb.innerHTML = canales.map(c => `
     <div style="display:grid;grid-template-columns:1.5fr 2fr 1fr 1fr 80px;gap:10px;padding:12px 18px;border-bottom:1px solid var(--bdr2);align-items:center;"
       onmouseenter="this.style.background='rgba(47,77,138,.08)'"
       onmouseleave="this.style.background='transparent'">
       <div style="font-size:13px;font-weight:700;color:var(--t1);">${c.nombre}</div>
-      <div style="font-size:11px;color:var(--t3);">${c.aseguradoras||'—'}</div>
-      <div style="font-size:18px;font-weight:900;color:var(--turq);">${c.pct_sekiury||70}%</div>
+      <div style="font-size:11px;color:var(--t3);">${c.aseguradoras_texto||'—'}</div>
+      <div style="font-size:18px;font-weight:900;color:var(--turq);">${c.pct_participacion||70}%</div>
       <div><span class="pill ${c.activo?'pill-ok':'pill-err'}">${c.activo?'Activo':'Inactivo'}</span></div>
       <div style="display:flex;gap:6px;">
-        <button class="act-btn edit" onclick="editarCanal('${c._id}')">✏️</button>
-        <button class="act-btn del" onclick="toggleCanal('${c._id}')">${c.activo?'⏸️':'▶️'}</button>
+        <button class="act-btn edit" onclick="editarCanal('${c.id}')">✏️</button>
+        <button class="act-btn del" onclick="toggleCanal('${c.id}')">${c.activo?'⏸️':'▶️'}</button>
       </div>
     </div>`).join('');
 }
@@ -8625,74 +8643,86 @@ function abrirNuevoCanal() {
 }
 
 function editarCanal(id) {
-  const c = getCfgCanales().find(x => x._id === id);
+  const c = CANALES_CACHE.find(x => x.id === id);
   if (!c) return;
   _editCanalId = id;
   document.getElementById('modal-cfg-canal-title').textContent = '✏️ Editar Canal';
   document.getElementById('cfg-canal-nombre').value = c.nombre || '';
-  document.getElementById('cfg-canal-aseguradoras').value = c.aseguradoras || '';
-  document.getElementById('cfg-canal-pct').value = c.pct_sekiury || 70;
+  document.getElementById('cfg-canal-aseguradoras').value = c.aseguradoras_texto || '';
+  document.getElementById('cfg-canal-pct').value = c.pct_participacion || 70;
   document.getElementById('cfg-canal-email').value = c.email || '';
-  document.getElementById('cfg-canal-obs').value = c.obs || '';
+  document.getElementById('cfg-canal-obs').value = c.observaciones || '';
   abrirModal('modal-cfg-canal');
 }
 
-function guardarCanal() {
+async function guardarCanal() {
   const nombre = document.getElementById('cfg-canal-nombre').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio', 'err'); return; }
   const data = {
     nombre,
-    aseguradoras: document.getElementById('cfg-canal-aseguradoras').value.trim(),
-    pct_sekiury: parseFloat(document.getElementById('cfg-canal-pct').value) || 70,
-    email: document.getElementById('cfg-canal-email').value.trim(),
-    obs: document.getElementById('cfg-canal-obs').value.trim(),
-    activo: true,
+    aseguradoras_texto: document.getElementById('cfg-canal-aseguradoras').value.trim() || null,
+    pct_participacion: parseFloat(document.getElementById('cfg-canal-pct').value) || 70,
+    email: document.getElementById('cfg-canal-email').value.trim() || null,
+    observaciones: document.getElementById('cfg-canal-obs').value.trim() || null,
   };
-  const lista = getCfgCanales();
-  if (_editCanalId) {
-    const idx = lista.findIndex(x => x._id === _editCanalId);
-    lista[idx] = { ...lista[idx], ...data };
-    showToast('Canal actualizado ✅');
-  } else {
-    data._id = 'canal_' + Date.now();
-    lista.push(data);
-    showToast('Canal agregado ✅');
+  try {
+    if (_editCanalId) {
+      const { error } = await sb.from('canales').update(data).eq('id', _editCanalId);
+      if (error) throw error;
+      showToast('Canal actualizado ✅');
+    } else {
+      data.activo = true;
+      const { error } = await sb.from('canales').insert(data);
+      if (error) throw error;
+      showToast('Canal agregado ✅');
+    }
+    await cargarCanalesCache();
+    cerrarModal('modal-cfg-canal');
+    renderCfgCanales();
+  } catch (e) {
+    console.error('Error guardando canal en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
   }
-  localStorage.setItem(CFG_CANALES_KEY, JSON.stringify(lista));
-  cerrarModal('modal-cfg-canal');
-  renderCfgCanales();
 }
 
-function toggleCanal(id) {
-  const lista = getCfgCanales();
-  const idx = lista.findIndex(x => x._id === id);
-  lista[idx].activo = !lista[idx].activo;
-  localStorage.setItem(CFG_CANALES_KEY, JSON.stringify(lista));
-  renderCfgCanales();
+async function toggleCanal(id) {
+  const c = CANALES_CACHE.find(x => x.id === id);
+  if (!c) return;
+  try {
+    const { error } = await sb.from('canales').update({ activo: !c.activo }).eq('id', id);
+    if (error) throw error;
+    await cargarCanalesCache();
+    renderCfgCanales();
+  } catch (e) {
+    console.error('Error actualizando canal en Supabase:', e);
+    showToast('Error al actualizar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
-// ── USUARIOS ──────────────────────────────────────────────────────────────────
+// ── USUARIOS (Supabase: tabla `agentes`) ──────────────────────────────────────
+// Nota: solo Alberny y Johanna (los 2 agentes de Sekiury). No hay flujo de alta de login
+// desde aquí — un usuario nuevo requiere crear también su cuenta en Supabase Auth.
 let _editUsrId = null;
 
 function renderCfgUsuarios() {
-  const usuarios = getCfgUsuarios();
+  const usuarios = USUARIOS_CACHE;
   const tb = document.getElementById('cfg-tabla-usuarios');
   if (!tb) return;
-  const roles = { admin: '👑 Administrador', asesor: '🧑‍💼 Asesor', operaciones: '⚙️ Operaciones' };
+  const roles = { admin: '👑 Administrador', agente: '🧑‍💼 Asesor', asesor: '🧑‍💼 Asesor', operaciones: '⚙️ Operaciones' };
   tb.innerHTML = usuarios.map(u => `
     <div style="background:var(--bg2);border:1px solid var(--bdr);border-radius:14px;padding:20px;position:relative;">
       <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--azul),var(--ciel));border-radius:14px 14px 0 0;"></div>
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
         <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--azul),var(--ciel));display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#fff;">
-          ${(u.nombre[0]||'')+(u.apellidos[0]||'')}
+          ${(u.nombre?.[0]||'')+(u.apellidos?.[0]||'')}
         </div>
         <div>
-          <div style="font-size:15px;font-weight:900;color:var(--t1);">${u.nombre} ${u.apellidos}</div>
+          <div style="font-size:15px;font-weight:900;color:var(--t1);">${u.nombre} ${u.apellidos||''}</div>
           <div style="font-size:11px;color:var(--t3);">${u.email}</div>
         </div>
         <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="act-btn edit" onclick="editarUsuario('${u._id}')">✏️</button>
-          <button class="act-btn del" onclick="toggleUsuario('${u._id}')">${u.activo?'⏸️':'▶️'}</button>
+          <button class="act-btn edit" onclick="editarUsuario('${u.id}')">✏️</button>
+          <button class="act-btn del" onclick="toggleUsuario('${u.id}')">${u.activo?'⏸️':'▶️'}</button>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -8706,7 +8736,7 @@ function renderCfgUsuarios() {
         </div>
         <div style="background:var(--bg3);border-radius:8px;padding:8px 12px;">
           <div style="font-size:9px;font-weight:800;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">PANTALLA</div>
-          <div style="font-size:12px;font-weight:700;color:var(--t2);">${u.modo==='dark'?'🌙 Oscuro':'☀️ Claro'}</div>
+          <div style="font-size:12px;font-weight:700;color:var(--t2);">${u.modo_pantalla==='light'?'☀️ Claro':'🌙 Oscuro'}</div>
         </div>
         <div style="background:var(--bg3);border-radius:8px;padding:8px 12px;">
           <div style="font-size:9px;font-weight:800;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;">ESTADO</div>
@@ -8720,68 +8750,80 @@ function abrirNuevoUsuario() {
   _editUsrId = null;
   document.getElementById('modal-cfg-usuario-title').textContent = '＋ Nuevo Usuario';
   ['cfg-usr-nombre','cfg-usr-apellidos','cfg-usr-email'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  document.getElementById('cfg-usr-rol').value = 'asesor';
+  document.getElementById('cfg-usr-rol').value = 'agente';
   document.getElementById('cfg-usr-especialidad').value = '';
   document.getElementById('cfg-usr-modo').value = 'dark';
   abrirModal('modal-cfg-usuario');
 }
 
 function editarUsuario(id) {
-  const u = getCfgUsuarios().find(x => x._id === id);
+  const u = USUARIOS_CACHE.find(x => x.id === id);
   if (!u) return;
   _editUsrId = id;
   document.getElementById('modal-cfg-usuario-title').textContent = '✏️ Editar Usuario';
   document.getElementById('cfg-usr-nombre').value = u.nombre || '';
   document.getElementById('cfg-usr-apellidos').value = u.apellidos || '';
   document.getElementById('cfg-usr-email').value = u.email || '';
-  document.getElementById('cfg-usr-rol').value = u.rol || 'asesor';
+  document.getElementById('cfg-usr-rol').value = u.rol || 'agente';
   document.getElementById('cfg-usr-especialidad').value = u.especialidad || '';
-  document.getElementById('cfg-usr-modo').value = u.modo || 'dark';
+  document.getElementById('cfg-usr-modo').value = u.modo_pantalla || 'dark';
   abrirModal('modal-cfg-usuario');
 }
 
-function guardarUsuario() {
+async function guardarUsuario() {
   const nombre = document.getElementById('cfg-usr-nombre').value.trim();
   const email  = document.getElementById('cfg-usr-email').value.trim();
   if (!nombre || !email) { showToast('Nombre y email son obligatorios', 'err'); return; }
   const data = {
     nombre,
-    apellidos: document.getElementById('cfg-usr-apellidos').value.trim(),
+    apellidos: document.getElementById('cfg-usr-apellidos').value.trim() || null,
     email,
     rol: document.getElementById('cfg-usr-rol').value,
-    especialidad: document.getElementById('cfg-usr-especialidad').value,
-    modo: document.getElementById('cfg-usr-modo').value,
-    activo: true,
+    especialidad: document.getElementById('cfg-usr-especialidad').value || null,
+    modo_pantalla: document.getElementById('cfg-usr-modo').value,
   };
-  const lista = getCfgUsuarios();
-  if (_editUsrId) {
-    const idx = lista.findIndex(x => x._id === _editUsrId);
-    lista[idx] = { ...lista[idx], ...data };
-    showToast('Usuario actualizado ✅');
-  } else {
-    data._id = 'usr_' + Date.now();
-    lista.push(data);
-    showToast('Usuario agregado ✅');
+  try {
+    if (_editUsrId) {
+      const { error } = await sb.from('agentes').update(data).eq('id', _editUsrId);
+      if (error) throw error;
+      showToast('Usuario actualizado ✅');
+    } else {
+      data.activo = true;
+      const { error } = await sb.from('agentes').insert(data);
+      if (error) throw error;
+      showToast('Usuario agregado ✅ — recuerda crear su acceso en Supabase Auth');
+    }
+    await cargarUsuariosCache();
+    cerrarModal('modal-cfg-usuario');
+    renderCfgUsuarios();
+  } catch (e) {
+    console.error('Error guardando usuario en Supabase:', e);
+    showToast('Error al guardar en Supabase: ' + (e.message||''), 'err');
   }
-  localStorage.setItem(CFG_USUARIOS_KEY, JSON.stringify(lista));
-  cerrarModal('modal-cfg-usuario');
-  renderCfgUsuarios();
 }
 
-function toggleUsuario(id) {
-  const lista = getCfgUsuarios();
-  const idx = lista.findIndex(x => x._id === id);
-  lista[idx].activo = !lista[idx].activo;
-  localStorage.setItem(CFG_USUARIOS_KEY, JSON.stringify(lista));
-  renderCfgUsuarios();
+async function toggleUsuario(id) {
+  const u = USUARIOS_CACHE.find(x => x.id === id);
+  if (!u) return;
+  try {
+    const { error } = await sb.from('agentes').update({ activo: !u.activo }).eq('id', id);
+    if (error) throw error;
+    await cargarUsuariosCache();
+    renderCfgUsuarios();
+  } catch (e) {
+    console.error('Error actualizando usuario en Supabase:', e);
+    showToast('Error al actualizar en Supabase: ' + (e.message||''), 'err');
+  }
 }
 
-// Inicializar al arrancar y al navegar a config
-function initConfig() {
-  initCfgData();
+// Inicializar al arrancar y al navegar a config: trae el catálogo de aseguradoras (si no
+// estaba ya cargado) y sincroniza los combos de Pólizas con lo que haya en Supabase.
+async function initConfig() {
+  if (ASEGURADORAS_CACHE.length === 0) await cargarAseguradorasCache();
   actualizarAseguradorasEnMemoria();
+  if (RAMOS_CFG_CACHE.length === 0) await cargarRamosCfgCache();
+  actualizarRamosEnMemoria();
 }
-
 
 
 // ══════════════════════════════════════════════════════════════════════════════
