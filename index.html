@@ -5572,6 +5572,12 @@ function mapPolizaDesdeSupabase(row) {
     observaciones: row.observaciones || '',
     fecha_creacion: (row.created_at||'').slice(0,10),
     notificaciones: NOTIF_CONFIG_KEYS.reduce((arr, key, i) => { if (row.notif_config?.[key]) arr.push(i); return arr; }, []),
+    // v46.12: 'nueva_renovada' vivía solo en memoria (no era columna real en Supabase),
+    // así que se perdía apenas la póliza se recargaba desde la base de datos — por eso
+    // enviarAvisoPoliza() siempre mandaba la plantilla de "póliza nueva", incluso para
+    // renovaciones. Ahora se reconstruye desde la columna real 'es_renovacion'.
+    nueva_renovada: row.es_renovacion ? 'Renovada' : 'Nueva',
+    poliza_origen_id: row.poliza_origen_id || null,
   };
   // El estado guardado en Supabase no se actualizaba solo con el paso del tiempo.
   // Se recalcula aquí según la fecha real de vencimiento (Vigente/Por Renovar/Vencida),
@@ -5604,6 +5610,11 @@ function mapPolizaASupabase(data) {
     estado: estadoMap[data.estado] || 'Vigente',
     observaciones: data.observaciones || null,
     notif_config: NOTIF_CONFIG_KEYS.reduce((acc, key, i) => { acc[key] = (data.notificaciones||[]).includes(i); return acc; }, {}),
+    // v46.12: columnas reales para que "es renovación" sobreviva al recargar desde Supabase
+    // (ver nota en mapPolizaDesdeSupabase). poliza_origen_id deja trazabilidad de qué
+    // póliza original dio origen a esta renovación, para futuros reportes de cadena de renovación.
+    es_renovacion: data.nueva_renovada === 'Renovada',
+    poliza_origen_id: data.poliza_origen_id || null,
   };
 }
 
@@ -6650,7 +6661,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.11';
+const _CRM_VERSION = 'v46.12';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -7349,10 +7360,17 @@ async function confirmarRenovacion() {
     // "póliza renovada" automáticamente al confirmar, sin que nadie lo pidiera en
     // ese momento. Se coló en v46.2 y sobrevivió a la limpieza de v46.5 (esa solo
     // tocó guardarPoliza()). Iba contra la regla de Alberny: ningún proceso distinto
-    // a cumpleaños dispara solo. Ahora, igual que con una póliza nueva, el aviso se
-    // manda desde el botón manual "📨 Recordar" en la pestaña Info del detalle de
-    // la póliza renovada (la nueva póliza queda con nueva_renovada='Renovada', así
-    // que enviarAvisoPoliza() ya sabe usar la plantilla de "renovada" ahí).
+    // a cumpleaños dispara solo. Igual que con una póliza nueva, el aviso se manda
+    // desde el botón manual "📨 Recordar" en la pestaña Info del detalle de la
+    // póliza renovada.
+    // v46.12: la nota de arriba decía que la póliza renovada "quedaba con
+    // nueva_renovada='Renovada'" para que enviarAvisoPoliza() supiera cuál plantilla
+    // usar — eso era falso: 'nueva_renovada' nunca fue columna real en Supabase, así
+    // que se perdía en el mismo paso 3 de acá abajo (cargarPolizasDesdeSupabase, que
+    // reconstruye todo desde la base de datos). Confirmado en pruebas reales con
+    // Alberny (23-sep): el aviso de renovación salía con la plantilla de "nueva".
+    // Fix real: columnas 'es_renovacion'/'poliza_origen_id' en public.polizas — ver
+    // mapPolizaASupabase/mapPolizaDesdeSupabase, que ahora sí sobreviven la recarga.
   } catch (e) {
     console.error('Error renovando póliza en Supabase:', e);
     showToast('Error al renovar en Supabase: ' + (e.message||''), 'err');
