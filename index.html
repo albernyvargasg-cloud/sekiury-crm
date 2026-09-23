@@ -6661,11 +6661,47 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.12';
+const _CRM_VERSION = 'v46.13';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
 }
+
+// ── AVISO DE VERSIÓN NUEVA — v46.13 ──────────────────────────────────────────
+// Historial: varias veces (incluida la sesión de hoy) se probó un fix recién subido
+// a GitHub Pages y el comportamiento seguía siendo el viejo — porque el chequeo de
+// arriba (_CRM_VERSION vs localStorage) solo corre cuando el navegador YA cargó el
+// archivo nuevo. Si la pestaña o la app instalada se quedó abierta desde antes de
+// subir el archivo, el código viejo sigue corriendo en memoria sin avisar, así que
+// una prueba puede parecer "no funcionó" cuando en realidad nunca llegó a correr el
+// fix. Esto se confirmó hoy con datos reales: una renovación de prueba se guardó con
+// 'es_renovacion' en false porque el navegador todavía tenía cargada una versión
+// anterior a la que agregó esa columna. Ahora se revisa cada 2 minutos (y al volver
+// a la pestaña) si la versión publicada en el servidor cambió; si cambió, se muestra
+// un aviso fijo abajo para recargar manualmente — nunca se recarga solo, para no
+// perder un formulario a medio llenar.
+function iniciarChequeoVersionNueva() {
+  async function chequear() {
+    try {
+      const res = await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' });
+      const html = await res.text();
+      const m = html.match(/_CRM_VERSION\s*=\s*'([^']+)'/);
+      if (m && m[1] && m[1] !== _CRM_VERSION) mostrarAvisoVersionNueva(m[1]);
+    } catch (e) { /* sin red — no molestar */ }
+  }
+  function mostrarAvisoVersionNueva(nueva) {
+    if (document.getElementById('aviso-version-nueva')) return;
+    const div = document.createElement('div');
+    div.id = 'aviso-version-nueva';
+    div.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#0a1628;border-top:2px solid #68D7FF;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:12px;font-family:Nunito,sans-serif;font-size:13px;box-shadow:0 -4px 12px rgba(0,0,0,.4);flex-wrap:wrap;text-align:center;';
+    div.innerHTML = '<span>🔄 Hay una versión nueva del CRM (' + nueva + ') — recargá para actualizar y evitar resultados viejos.</span>' +
+      '<button style="background:#68D7FF;color:#0a1628;border:none;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;font-size:13px;" onclick="location.reload()">Recargar ahora</button>';
+    document.body.appendChild(div);
+  }
+  window.addEventListener('DOMContentLoaded', () => { chequear(); setInterval(chequear, 120000); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) chequear(); });
+}
+iniciarChequeoVersionNueva();
 // Seed comisiones desde RAMOS_DATA si localStorage está vacío
 function seedComisiones() {
   const guardadas = JSON.parse(localStorage.getItem('sekiury_comisiones') || '[]');
