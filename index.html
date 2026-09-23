@@ -6235,34 +6235,39 @@ function agregarBeneficiario() {
   lista.appendChild(div);
 }
 
-// v46.9: asegura que el <select> tenga una <option> con el valor guardado antes de asignarlo.
+// v46.11: asegura que el <select> tenga una <option> con el valor guardado antes de asignarlo,
+// y si el catálogo ya tiene ese mismo valor pero con distintas mayúsculas/minúsculas
+// (ej. catálogo="HOGAR" vs. guardado en Supabase="Hogar"), reutiliza la opción del catálogo
+// en vez de crear una duplicada — así el combo no queda vacío ni con entradas repetidas.
 // Esto evita que el campo se vea vacío al Editar Póliza cuando el catálogo estático
-// (ASEGURADORAS_DATA/RAMOS_DATA) ya no coincide con lo que el usuario guardó/editó en Config (Supabase).
+// (ASEGURADORAS_DATA/RAMOS_DATA) ya no coincide exactamente con lo guardado.
 // Fix aislado: no toca poblarSelectAseguradoras/poblarSelectRamos/poblarSelectSubramos ni getAsegNombres,
 // que siguen usándose igual en Nueva Póliza y en el cálculo de comisiones.
+// Devuelve el valor que realmente hay que asignarle al <select>.
 function asegurarOpcionEnSelect(selectId, valor) {
-  if (!valor) return;
+  if (!valor) return valor;
   const sel = document.getElementById(selectId);
-  if (!sel) return;
-  const existe = Array.from(sel.options).some(opt => opt.value === valor);
-  if (!existe) {
-    const opt = document.createElement('option');
-    opt.value = valor;
-    opt.textContent = valor;
-    sel.appendChild(opt);
-  }
+  if (!sel) return valor;
+  const opciones = Array.from(sel.options);
+  const exacta = opciones.find(opt => opt.value === valor);
+  if (exacta) return exacta.value;
+  const valorNorm = valor.trim().toLowerCase();
+  const porMayus = opciones.find(opt => opt.value.trim().toLowerCase() === valorNorm);
+  if (porMayus) return porMayus.value;
+  const opt = document.createElement('option');
+  opt.value = valor;
+  opt.textContent = valor;
+  sel.appendChild(opt);
+  return valor;
 }
 
 function llenarFormPoliza(p) {
   document.getElementById('pf-numero').value = p.numero_poliza||'';
   document.getElementById('pf-estado').value = p.estado||'vigente';
   document.getElementById('pf-nueva-renovada').value = p.nueva_renovada||'Nueva';
-  asegurarOpcionEnSelect('pf-aseguradora', p.aseguradora||'');
-  document.getElementById('pf-aseguradora').value = p.aseguradora||'';
-  asegurarOpcionEnSelect('pf-ramo', p.ramo||'');
-  document.getElementById('pf-ramo').value = p.ramo||'';
-  asegurarOpcionEnSelect('pf-subramo', p.subramo||'');
-  document.getElementById('pf-subramo').value = p.subramo||'';
+  document.getElementById('pf-aseguradora').value = asegurarOpcionEnSelect('pf-aseguradora', p.aseguradora||'');
+  document.getElementById('pf-ramo').value = asegurarOpcionEnSelect('pf-ramo', p.ramo||'');
+  document.getElementById('pf-subramo').value = asegurarOpcionEnSelect('pf-subramo', p.subramo||'');
   document.getElementById('pf-fecha-exp').value = p.fecha_expedicion||'';
   document.getElementById('pf-fecha-rec').value = p.fecha_recepcion||'';
   document.getElementById('pf-fecha-ini').value = p.fecha_inicio||'';
@@ -6645,7 +6650,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.10';
+const _CRM_VERSION = 'v46.11';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
