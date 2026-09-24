@@ -2714,6 +2714,13 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
             <div class="form-group"><label>Aseguradora *</label><select id="pf-aseguradora" onchange="onPfAsegChange()"><option value="">Seleccionar aseguradora</option></select></div>
             <div class="form-group"><label>Ramo *</label><select id="pf-ramo" onchange="onPfRamoChange()"><option value="">Seleccionar ramo</option></select></div>
             <div class="form-group"><label>Subramo</label><select id="pf-subramo"><option value="">Seleccionar subramo</option></select></div>
+            <div class="form-group" id="pf-modalidad-wrap" style="display:none;"><label>Modalidad</label>
+              <select id="pf-modalidad" onchange="onPfModalidadChange()">
+                <option value="">Seleccionar</option>
+                <option value="Individual">Individual</option>
+                <option value="Colectiva">Colectiva</option>
+              </select>
+            </div>
             <div class="form-group"><label>Fecha de Expedicion</label><input id="pf-fecha-exp" type="date"></div>
             <div class="form-group"><label>Fecha de Recepcion</label><input id="pf-fecha-rec" type="date"></div>
             <div class="form-group"><label>Fecha de Inicio *</label><input id="pf-fecha-ini" type="date"></div>
@@ -2745,8 +2752,8 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
             <div class="form-group"><label>Documento del Tomador</label><input id="pf-doc-tomador" placeholder="Documento"></div>
             <div class="form-group"><label>Nombre Asegurado</label><input id="pf-nom-asegurado" placeholder="Nombre del asegurado"></div>
             <div class="form-group"><label>Documento del Asegurado</label><input id="pf-doc-asegurado" placeholder="Documento"></div>
-            <div class="form-group" style="grid-column:1/-1">
-              <label>Beneficiarios</label>
+            <div class="form-group" style="grid-column:1/-1" id="pf-beneficiarios-wrap">
+              <label>Beneficiarios <span style="font-weight:400;color:var(--t3);font-size:11px;">— cada uno queda también como cliente (para cumpleaños y para autocompletar si compra otro producto)</span></label>
               <div id="pf-beneficiarios-list" style="margin-bottom:8px;"></div>
               <button onclick="agregarBeneficiario()" class="btn btn-outline" style="font-size:12px;padding:6px 12px;">+ Agregar Beneficiario</button>
             </div>
@@ -5569,9 +5576,21 @@ function mapPolizaDesdeSupabase(row) {
     prima_neta: row.prima_neta || '',
     total: row.prima_total || '',
     forma_pago: row.forma_pago || 'Contado',
+    periodicidad: row.periodicidad || 'Anual',
     observaciones: row.observaciones || '',
     fecha_creacion: (row.created_at||'').slice(0,10),
     notificaciones: NOTIF_CONFIG_KEYS.reduce((arr, key, i) => { if (row.notif_config?.[key]) arr.push(i); return arr; }, []),
+    // v46.14: estos campos existían en el formulario pero nunca se guardaban en Supabase
+    // (no eran columnas reales) — por eso "se borraban" al editar una póliza ya guardada.
+    // Ahora sí son columnas reales de public.polizas (ver mapPolizaASupabase).
+    gastos: row.gastos || '',
+    iva: row.iva || '',
+    pct_iva: row.pct_iva ?? 5,
+    pct_comision: row.pct_comision || '',
+    comision: row.comision || '',
+    // v46.14: Individual/Colectiva (hoy usado para Autos). Si es Colectiva, los beneficiarios
+    // viven en public.poliza_beneficiarios y se cargan aparte (ver cargarBeneficiariosPoliza).
+    modalidad: row.modalidad || '',
     // v46.12: 'nueva_renovada' vivía solo en memoria (no era columna real en Supabase),
     // así que se perdía apenas la póliza se recargaba desde la base de datos — por eso
     // enviarAvisoPoliza() siempre mandaba la plantilla de "póliza nueva", incluso para
@@ -5610,6 +5629,13 @@ function mapPolizaASupabase(data) {
     estado: estadoMap[data.estado] || 'Vigente',
     observaciones: data.observaciones || null,
     notif_config: NOTIF_CONFIG_KEYS.reduce((acc, key, i) => { acc[key] = (data.notificaciones||[]).includes(i); return acc; }, {}),
+    // v46.14: columnas reales — antes se calculaban en pantalla pero nunca se guardaban.
+    gastos: parseFloat(data.gastos) || null,
+    iva: parseFloat(data.iva) || null,
+    pct_iva: parseFloat(data.pct_iva) || null,
+    pct_comision: parseFloat(data.pct_comision) || null,
+    comision: parseFloat(data.comision) || null,
+    modalidad: data.modalidad || null,
     // v46.12: columnas reales para que "es renovación" sobreviva al recargar desde Supabase
     // (ver nota en mapPolizaDesdeSupabase). poliza_origen_id deja trazabilidad de qué
     // póliza original dio origen a esta renovación, para futuros reportes de cadena de renovación.
@@ -5709,6 +5735,27 @@ function onPfRamoChange() {
     if (pctIva) pctIva.value = (info.pct_iva*100).toFixed(1);
     recalcPolizaFinanciero();
   }
+  actualizarVisibilidadModalidad();
+}
+
+// v46.14: Individual/Colectiva solo aplica hoy a Autos (fleet). Si no es Autos,
+// se oculta el selector y se limpia — así no queda un valor "Colectiva" fantasma
+// en una póliza de otro ramo. Los Beneficiarios se muestran siempre que sea
+// Colectiva (o si ya tenía beneficiarios guardados de antes, ver llenarFormPoliza).
+function actualizarVisibilidadModalidad() {
+  const ramo = (document.getElementById('pf-ramo')?.value || '').toLowerCase();
+  const esAuto = ramo.includes('auto') || ramo.includes('vehic') || ramo.includes('moto');
+  const wrapModalidad = document.getElementById('pf-modalidad-wrap');
+  if (wrapModalidad) wrapModalidad.style.display = esAuto ? '' : 'none';
+  if (!esAuto) { const sel = document.getElementById('pf-modalidad'); if (sel) sel.value = ''; }
+  onPfModalidadChange();
+}
+
+function onPfModalidadChange() {
+  const modalidad = document.getElementById('pf-modalidad')?.value || '';
+  const wrapBen = document.getElementById('pf-beneficiarios-wrap');
+  const hayBeneficiarios = document.getElementById('pf-beneficiarios-list')?.children.length > 0;
+  if (wrapBen) wrapBen.style.display = (modalidad === 'Colectiva' || hayBeneficiarios) ? '' : 'none';
 }
 
 let importDataPolizas = [];
@@ -5927,6 +5974,7 @@ function renderDetallePolizaInfo(p) {
     <div class="dp-section">
       <div class="dp-section-title">Póliza</div>
       ${dp('Aseguradora',p.aseguradora)}${dp('Ramo',p.ramo)}${dp('Subramo',p.subramo)}
+      ${p.modalidad?dp('Modalidad',p.modalidad):''}
       ${dp('Riesgo',p.riesgo)}${dp('Valor Asegurado',fmtMoneda(p.valor_asegurado))}
       ${dp('Vendedor',p.vendedor)}${dp('Categoría',p.categoria)}
     </div>
@@ -5953,7 +6001,7 @@ function renderDetallePolizaInfo(p) {
       ${dp('Cédula',p.cedula_cliente)}
       ${dp('Tomador',p.nom_tomador)}${dp('Doc. Tomador',p.doc_tomador)}
       ${dp('Asegurado',p.nom_asegurado)}${dp('Doc. Asegurado',p.doc_asegurado)}
-      ${(p.beneficiarios||[]).length>0?`<div style="font-size:11px;color:var(--t3);margin-top:8px;font-weight:700;">BENEFICIARIOS</div>${p.beneficiarios.map(b=>`<div style="font-size:12px;color:var(--t2);padding:4px 0;">${b.nombre} <span style="color:var(--t3);">${b.documento||''}</span></div>`).join('')}`:''}
+      ${(p.beneficiarios||[]).length>0?`<div style="font-size:11px;color:var(--t3);margin-top:8px;font-weight:700;">BENEFICIARIOS</div>${p.beneficiarios.map(b=>`<div style="font-size:12px;color:var(--t2);padding:4px 0;">${b.nombre} <span style="color:var(--t3);">${b.documento||''}${b.placa?' · '+b.placa:''}</span></div>`).join('')}`:''}
     </div>
     ${p.obs_internas?`<div class="dp-section"><div class="dp-section-title">Obs. Internas</div><div style="font-size:12px;color:var(--t2);line-height:1.6;">${p.obs_internas}</div></div>`:''}
     ${p.observaciones?`<div class="dp-section"><div class="dp-section-title">Observaciones</div><div style="font-size:12px;color:var(--t2);line-height:1.6;">${p.observaciones}</div></div>`:''}
@@ -6128,7 +6176,7 @@ function editarPolizaFromDetail() {
   }
 }
 
-function abrirDetallePoliza(id) {
+async function abrirDetallePoliza(id) {
   _polizaDetalleId = id;
   const p = polizas.find(x=>x._id===id);
   if (!p) return;
@@ -6140,6 +6188,15 @@ function abrirDetallePoliza(id) {
   document.querySelector('.dp-tab-btn[data-tab="info"]').classList.add('active');
   document.getElementById('dp-body-poliza').innerHTML = renderDetallePolizaInfo(p);
   document.getElementById('detail-panel-poliza').classList.add('open');
+  // v46.14: los beneficiarios viven en su propia tabla — se cargan aparte y se repinta
+  // la pestaña Info si el usuario sigue ahí (no interrumpe si ya cambió de pestaña/póliza).
+  const beneficiarios = await cargarBeneficiariosPoliza(id);
+  if (_polizaDetalleId === id && beneficiarios.length) {
+    p.beneficiarios = beneficiarios;
+    if (document.querySelector('.dp-tab-btn[data-tab="info"]')?.classList.contains('active')) {
+      document.getElementById('dp-body-poliza').innerHTML = renderDetallePolizaInfo(p);
+    }
+  }
 }
 function cerrarDetallePoliza() { document.getElementById('detail-panel-poliza').classList.remove('open'); }
 
@@ -6155,10 +6212,16 @@ function abrirNuevaPoliza() {
   document.getElementById('pf-estado').value = 'vigente';
   document.getElementById('pf-fecha-ini').value = '';
   document.getElementById('pf-fecha-fin').value = '';
+  const selModalidad = document.getElementById('pf-modalidad');
+  if (selModalidad) selModalidad.value = '';
+  document.getElementById('pf-beneficiarios-list').innerHTML = '';
+  actualizarVisibilidadModalidad();
   abrirModal('modal-poliza');
 }
 
-function editarPoliza(id) {
+// v46.14: async porque los beneficiarios ahora viven en su propia tabla
+// (public.poliza_beneficiarios) y hay que traerlos de Supabase antes de mostrarlos.
+async function editarPoliza(id) {
   const p = polizas.find(x=>x._id===id);
   if (!p) return;
   editandoPolizaId = id;
@@ -6170,6 +6233,12 @@ function editarPoliza(id) {
   // Usar función completa de llenado
   llenarFormPoliza(p);
   abrirModal('modal-poliza');
+  const beneficiarios = await cargarBeneficiariosPoliza(id);
+  beneficiarios.forEach(b => agregarBeneficiario({
+    nombre: b.nombre, documento: b.documento, placa: b.placa,
+    fecha_nacimiento: b.fecha_nacimiento||'',
+  }));
+  actualizarVisibilidadModalidad();
 }
 
 function calcularTotalPoliza() {
@@ -6234,16 +6303,23 @@ function limpiarClientePoliza() {
   document.getElementById('pf-cliente-buscar').value = '';
 }
 
-function agregarBeneficiario() {
+// v46.14: se agregó Placa (complementa nombre y cédula — para pólizas Colectivas de Autos)
+// y Fecha de Nacimiento (opcional — sin ella el beneficiario queda como cliente pero no
+// entra en las alertas de cumpleaños hasta que alguien la complete).
+function agregarBeneficiario(datos) {
+  datos = datos || {};
   const lista = document.getElementById('pf-beneficiarios-list');
-  const idx = lista.children.length;
   const div = document.createElement('div');
-  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:6px;';
+  div.style.cssText = 'display:grid;grid-template-columns:1.3fr 1fr .8fr .9fr 28px;gap:8px;margin-bottom:6px;';
+  const inputStyle = 'background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;';
   div.innerHTML = `
-    <input placeholder="Nombre beneficiario" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-nombre>
-    <input placeholder="Documento" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-doc>
-    <button onclick="this.parentElement.remove()" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;">x</button>`;
+    <input placeholder="Nombre beneficiario" value="${datos.nombre||''}" style="${inputStyle}" data-ben-nombre>
+    <input placeholder="Documento" value="${datos.documento||''}" style="${inputStyle}" data-ben-doc>
+    <input placeholder="Placa" value="${datos.placa||''}" style="${inputStyle}text-transform:uppercase;" data-ben-placa>
+    <input type="date" title="Fecha de nacimiento (opcional — para cumpleaños)" value="${datos.fecha_nacimiento||''}" style="${inputStyle}" data-ben-fecha-nac>
+    <button onclick="this.parentElement.remove();onPfModalidadChange();" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;">x</button>`;
   lista.appendChild(div);
+  onPfModalidadChange();
 }
 
 // v46.11: asegura que el <select> tenga una <option> con el valor guardado antes de asignarlo,
@@ -6320,24 +6396,21 @@ function llenarFormPoliza(p) {
   document.getElementById('pf-forma-pago').value = p.forma_pago||'Contado';
   document.getElementById('pf-medio-pago').value = p.medio_pago||'';
   document.getElementById('pf-banco').value = p.banco||'';
+  // v46.14: Modalidad (Individual/Colectiva) — solo relevante hoy para Autos.
+  const selModalidad = document.getElementById('pf-modalidad');
+  if (selModalidad) selModalidad.value = p.modalidad||'';
   // Notificaciones
   const notifs = p.notificaciones||[];
   for(let i=0;i<=10;i++) {
     const el = document.getElementById('pf-notif-'+i);
     if(el) el.checked = notifs.includes(i);
   }
-  // Beneficiarios
+  // Beneficiarios: se limpia aquí; si la póliza tiene beneficiarios guardados en
+  // public.poliza_beneficiarios, editarPoliza() los carga aparte (son async) y los agrega
+  // después de llamar a esta función, con agregarBeneficiario().
   const lista = document.getElementById('pf-beneficiarios-list');
   lista.innerHTML = '';
-  (p.beneficiarios||[]).forEach(b => {
-    const div = document.createElement('div');
-    div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:6px;';
-    div.innerHTML = `
-      <input placeholder="Nombre" value="${b.nombre||''}" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-nombre>
-      <input placeholder="Documento" value="${b.documento||''}" style="background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;" data-ben-doc>
-      <button onclick="this.parentElement.remove()" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;">x</button>`;
-    lista.appendChild(div);
-  });
+  actualizarVisibilidadModalidad();
   // Llenar datalists
   const asegList = [...new Set(polizas.map(p=>p.aseguradora).filter(Boolean))].sort();
   const ramoList = [...new Set(polizas.map(p=>p.ramo).filter(Boolean))].sort();
@@ -6352,7 +6425,9 @@ function leerFormPoliza() {
   document.querySelectorAll('#pf-beneficiarios-list > div').forEach(div => {
     const nom = div.querySelector('[data-ben-nombre]')?.value?.trim();
     const doc = div.querySelector('[data-ben-doc]')?.value?.trim();
-    if(nom) bens.push({nombre:nom, documento:doc});
+    const placa = div.querySelector('[data-ben-placa]')?.value?.trim();
+    const fechaNac = div.querySelector('[data-ben-fecha-nac]')?.value;
+    if(nom) bens.push({nombre:nom, documento:doc, placa: placa?placa.toUpperCase():'', fecha_nacimiento: fechaNac||''});
   });
   return {
     numero_poliza: document.getElementById('pf-numero').value.trim(),
@@ -6361,6 +6436,7 @@ function leerFormPoliza() {
     aseguradora: document.getElementById('pf-aseguradora').value.trim(),
     ramo: document.getElementById('pf-ramo').value.trim(),
     subramo: document.getElementById('pf-subramo').value.trim(),
+    modalidad: document.getElementById('pf-modalidad')?.value.trim() || '',
     fecha_expedicion: document.getElementById('pf-fecha-exp').value,
     fecha_recepcion: document.getElementById('pf-fecha-rec').value,
     fecha_inicio: document.getElementById('pf-fecha-ini').value,
@@ -6402,6 +6478,69 @@ function leerFormPoliza() {
   };
 }
 
+// v46.14 — Beneficiarios de póliza ahora viven en public.poliza_beneficiarios (antes solo
+// existían en el formulario y se perdían al guardar: no había columna para ellos).
+async function cargarBeneficiariosPoliza(polizaId) {
+  try {
+    const { data, error } = await sb.from('poliza_beneficiarios').select('*').eq('poliza_id', polizaId);
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error('Error cargando beneficiarios:', e);
+    return [];
+  }
+}
+
+// Reemplazo completo de los beneficiarios de una póliza: se borran los que había y se
+// re-insertan con lo que hay ahora mismo en el formulario. Cada beneficiario con nombre
+// queda también como Cliente (Prospecto) — así entra en cumpleaños y, si más adelante
+// compra otro producto (Salud, Vida...), buscarlo por cédula o nombre lo autocompleta.
+async function guardarBeneficiariosPoliza(polizaId, beneficiarios, numeroPoliza) {
+  try {
+    const { error: errDel } = await sb.from('poliza_beneficiarios').delete().eq('poliza_id', polizaId);
+    if (errDel) throw errDel;
+    if (!beneficiarios || !beneficiarios.length) return;
+
+    for (const b of beneficiarios) {
+      if (!b.nombre) continue;
+      let clienteId = null;
+      if (b.documento) {
+        const { data: existente } = await sb.from('clientes').select('id').eq('numero_doc', b.documento).maybeSingle();
+        if (existente) clienteId = existente.id;
+      }
+      if (!clienteId) {
+        const partes = b.nombre.trim().split(' ');
+        const nombre = partes.shift() || b.nombre;
+        const apellidos = partes.join(' ') || null;
+        const { data: nuevo, error: errIns } = await sb.from('clientes').insert({
+          nombre, apellidos,
+          numero_doc: b.documento || null,
+          tipo_doc: 'CC',
+          fecha_nacimiento: b.fecha_nacimiento || null,
+          estado: 'Prospecto',
+          observaciones: 'Creado automáticamente como beneficiario de la póliza ' + (numeroPoliza||''),
+        }).select('id').single();
+        if (errIns) { console.error('No se pudo crear cliente para beneficiario', b, errIns); continue; }
+        clienteId = nuevo.id;
+      } else if (b.fecha_nacimiento) {
+        // Si el cliente ya existía y hoy sí capturamos su fecha de nacimiento, se completa
+        // sin pisar la que ya tuviera guardada.
+        await sb.from('clientes').update({ fecha_nacimiento: b.fecha_nacimiento }).eq('id', clienteId).is('fecha_nacimiento', null);
+      }
+      const { error: errBen } = await sb.from('poliza_beneficiarios').insert({
+        poliza_id: polizaId, cliente_id: clienteId,
+        nombre: b.nombre, documento: b.documento || null,
+        placa: b.placa || null, fecha_nacimiento: b.fecha_nacimiento || null,
+      });
+      if (errBen) console.error('No se pudo guardar beneficiario', b, errBen);
+    }
+    await cargarClientesDesdeSupabase();
+  } catch (e) {
+    console.error('Error guardando beneficiarios:', e);
+    showToast('La póliza se guardó, pero hubo un problema guardando beneficiarios: ' + e.message, 'err');
+  }
+}
+
 async function guardarPoliza() {
   const data = leerFormPoliza();
   if (!data.numero_poliza) { showToast('El numero de poliza es obligatorio','err'); return; }
@@ -6434,6 +6573,9 @@ async function guardarPoliza() {
       polizaIdGuardada = nueva.id;
       showToast('Poliza creada');
     }
+    // v46.14: beneficiarios (Colectiva) — se guardan aparte porque viven en su propia
+    // tabla y cada uno queda vinculado a un Cliente real.
+    await guardarBeneficiariosPoliza(polizaIdGuardada, data.beneficiarios, data.numero_poliza);
     await cargarPolizasDesdeSupabase();
     actualizarStatsPolizas();
     actualizarDashboard();
@@ -6661,7 +6803,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.13';
+const _CRM_VERSION = 'v46.14';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -7384,8 +7526,25 @@ async function confirmarRenovacion() {
     const { error: errUpdate } = await sb.from('polizas').update({ estado: 'Renovada' }).eq('id', id);
     if (errUpdate) throw errUpdate;
 
+    // 2.5) v46.14 — Cerrar los cobros del ciclo anterior que quedaron abiertos.
+    // Antes, al renovar, el cobro viejo (con fecha de vencimiento del período que ya pasó)
+    // se quedaba mostrando "vencido" para siempre, aunque la póliza ya tuviera un ciclo nuevo.
+    // Se marcan como "No vigente" — el mismo mecanismo manual que ya existía en Cobros
+    // (toggleNoVigenteCobro) — nunca se borran, solo dejan de contar como pendientes.
+    try {
+      const { data: cobrosViejos, error: errCobViejos } = await sb.from('cobros')
+        .select('id').eq('poliza_id', id).neq('estado', 'Pagada').eq('marcado_no_vigente', false);
+      if (!errCobViejos && cobrosViejos && cobrosViejos.length) {
+        await sb.from('cobros').update({ marcado_no_vigente: true })
+          .in('id', cobrosViejos.map(c => c.id));
+      }
+    } catch (eCob) {
+      console.error('No se pudieron cerrar los cobros del ciclo anterior:', eCob);
+    }
+
     // 3) Refrescar todo desde Supabase (fuente única de verdad)
     await cargarPolizasDesdeSupabase();
+    if (typeof cargarCobrosDesdeSupabase === 'function') await cargarCobrosDesdeSupabase();
     actualizarStatsPolizas();
     actualizarDashboard();
     cerrarModal('modal-renovar');
