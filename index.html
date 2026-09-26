@@ -5738,16 +5738,21 @@ function onPfRamoChange() {
   actualizarVisibilidadModalidad();
 }
 
-// v46.14: Individual/Colectiva solo aplica hoy a Autos (fleet). Si no es Autos,
+// v46.14: Individual/Colectiva nació solo para Autos (fleet).
+// v46.15: se amplía a Salud (Salud Colectiva), Vida (Vida Grupo) y Accidentes
+// (Accidentes Colectivo) — pólizas de una empresa/club que cubren a varias personas
+// (ej. CLUB DEPORTIVO TALENTOS COLOMBIA, Salud Colectiva) y cuyos miembros hoy no
+// quedaban registrados como clientes en ningún lado. Si el ramo no admite modalidad,
 // se oculta el selector y se limpia — así no queda un valor "Colectiva" fantasma
 // en una póliza de otro ramo. Los Beneficiarios se muestran siempre que sea
 // Colectiva (o si ya tenía beneficiarios guardados de antes, ver llenarFormPoliza).
 function actualizarVisibilidadModalidad() {
   const ramo = (document.getElementById('pf-ramo')?.value || '').toLowerCase();
   const esAuto = ramo.includes('auto') || ramo.includes('vehic') || ramo.includes('moto');
+  const permiteModalidad = esAuto || ramo.includes('salud') || ramo.includes('vida') || ramo.includes('accident');
   const wrapModalidad = document.getElementById('pf-modalidad-wrap');
-  if (wrapModalidad) wrapModalidad.style.display = esAuto ? '' : 'none';
-  if (!esAuto) { const sel = document.getElementById('pf-modalidad'); if (sel) sel.value = ''; }
+  if (wrapModalidad) wrapModalidad.style.display = permiteModalidad ? '' : 'none';
+  if (!permiteModalidad) { const sel = document.getElementById('pf-modalidad'); if (sel) sel.value = ''; }
   onPfModalidadChange();
 }
 
@@ -6306,16 +6311,21 @@ function limpiarClientePoliza() {
 // v46.14: se agregó Placa (complementa nombre y cédula — para pólizas Colectivas de Autos)
 // y Fecha de Nacimiento (opcional — sin ella el beneficiario queda como cliente pero no
 // entra en las alertas de cumpleaños hasta que alguien la complete).
+// v46.15: Placa solo tiene sentido en Autos (Colectiva = flota). En Salud Colectiva/Vida
+// Grupo/Accidentes Colectivo (personas, no vehículos) se oculta el campo — no se elimina
+// del DOM para no romper leerFormPoliza(), simplemente queda vacío y sin mostrarse.
 function agregarBeneficiario(datos) {
   datos = datos || {};
+  const ramoActual = (document.getElementById('pf-ramo')?.value || '').toLowerCase();
+  const esAuto = ramoActual.includes('auto') || ramoActual.includes('vehic') || ramoActual.includes('moto');
   const lista = document.getElementById('pf-beneficiarios-list');
   const div = document.createElement('div');
-  div.style.cssText = 'display:grid;grid-template-columns:1.3fr 1fr .8fr .9fr 28px;gap:8px;margin-bottom:6px;';
+  div.style.cssText = `display:grid;grid-template-columns:1.3fr 1fr ${esAuto?'.8fr ':''}.9fr 28px;gap:8px;margin-bottom:6px;`;
   const inputStyle = 'background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;padding:8px 10px;color:var(--t1);font-size:12px;font-family:Nunito,sans-serif;outline:none;';
   div.innerHTML = `
     <input placeholder="Nombre beneficiario" value="${datos.nombre||''}" style="${inputStyle}" data-ben-nombre>
     <input placeholder="Documento" value="${datos.documento||''}" style="${inputStyle}" data-ben-doc>
-    <input placeholder="Placa" value="${datos.placa||''}" style="${inputStyle}text-transform:uppercase;" data-ben-placa>
+    <input placeholder="Placa" value="${datos.placa||''}" style="${inputStyle}text-transform:uppercase;${esAuto?'':'display:none;'}" data-ben-placa>
     <input type="date" title="Fecha de nacimiento (opcional — para cumpleaños)" value="${datos.fecha_nacimiento||''}" style="${inputStyle}" data-ben-fecha-nac>
     <button onclick="this.parentElement.remove();onPfModalidadChange();" style="background:rgba(239,68,68,.15);border:none;border-radius:8px;color:var(--err);cursor:pointer;font-size:14px;">x</button>`;
   lista.appendChild(div);
@@ -6803,7 +6813,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.14';
+const _CRM_VERSION = 'v46.15';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
