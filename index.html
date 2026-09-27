@@ -3758,6 +3758,25 @@ function handleDrop(e) {
   if (file) handleFile(file);
 }
 
+// v46.17: Supabase solo acepta CC/NIT/CE/PA/TI/RC/PPT (exacto, mayúsculas) en
+// clientes.tipo_doc — un Excel real casi nunca viene así. Normaliza las variantes
+// más comunes en español (con o sin tildes/puntuación, gracias a normalizarTexto())
+// y, si no reconoce nada, cae en 'CC' (el mismo default que ya usa
+// mapClienteASupabase() para "Nuevo Cliente" manual).
+function normalizarTipoDoc(valor) {
+  const v = normalizarTexto(valor).replace(/[.\s]/g, '');
+  const MAPA = {
+    'cc':'CC', 'cedula':'CC', 'ceduladeciudadania':'CC',
+    'nit':'NIT',
+    'ce':'CE', 'ceduladeextranjeria':'CE',
+    'ti':'TI', 'tarjetadeidentidad':'TI',
+    'rc':'RC', 'registrocivil':'RC',
+    'pa':'PA', 'pasaporte':'PA', 'pp':'PA',
+    'ppt':'PPT', 'permisodeprotecciontemporal':'PPT', 'permisoporprotecciontemporal':'PPT',
+  };
+  return MAPA[v] || 'CC';
+}
+
 function handleFile(file) {
   if (!file) return;
   const reader = new FileReader();
@@ -3782,6 +3801,12 @@ function handleFile(file) {
         else c.estado = 'activo';
         if (c.estado === 'Cliente') c.estado = 'activo';
         if (c.estado === 'Prospecto') c.estado = 'prospecto';
+        // v46.17 — Normalizar Tipo de Documento. Supabase exige uno EXACTO de
+        // CC/NIT/CE/PA/TI/RC/PPT (clientes_tipo_doc_check); un Excel escrito a mano
+        // casi nunca trae eso ("C.C.", "Cedula", "cc", vacío...) y como antes ese
+        // valor se pasaba tal cual, TODA la fila fallaba al guardar en Supabase
+        // (por eso los 27 clientes daban "0 importados · 27 con error").
+        c.tipo_documento = normalizarTipoDoc(c.tipo_documento);
         if (!c.nombre && !c.apellidos && !c.numero_documento) return null;
         return c;
       }).filter(Boolean);
@@ -6850,7 +6875,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.16';
+const _CRM_VERSION = 'v46.17';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
