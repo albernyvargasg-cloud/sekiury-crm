@@ -3805,19 +3805,56 @@ function handleFile(file) {
   reader.readAsBinaryString(file);
 }
 
-function confirmarImport() {
+// v46.16 — BUG CRÍTICO: esta función nunca escribía en Supabase, solo en el array
+// en memoria + localStorage del navegador de quien hacía la importación. Por eso
+// el toast decía "importado" pero: (1) Johanna nunca los veía (localStorage no se
+// comparte entre navegadores/equipos), y (2) al recargar o volver a entrar, la
+// próxima cargarClientesDesdeSupabase() traía solo lo que hay en Supabase (nada)
+// y pisaba el array local, borrando los "clientes fantasma". Ahora cada registro
+// nuevo se inserta de verdad en Supabase, uno por uno (igual que guardarCliente()),
+// para poder reportar cuáles fallaron sin perder los que sí se guardaron.
+async function confirmarImport() {
   const nuevos = importData.filter(imp => {
     if (!imp.numero_documento) return true;
     return !clientes.some(c => c.numero_documento === imp.numero_documento);
   });
   const duplicados = importData.length - nuevos.length;
-  clientes = [...clientes, ...nuevos];
-  guardarLS();
-  filtrados = [...clientes];
-  filtrarClientes();
+  if (!nuevos.length) {
+    cerrarModal('modal-import');
+    showToast(duplicados ? `0 nuevos — los ${duplicados} ya existían en la base` : 'No hay registros para importar', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('btn-confirmar-import');
+  const textoOriginal = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Importando a Supabase...'; }
+
+  let creados = 0;
+  const errores = [];
+  for (const imp of nuevos) {
+    if (!imp.nombre && !imp.apellidos) { errores.push('Registro sin nombre ni apellidos — omitido'); continue; }
+    const payload = mapClienteASupabase({ ...imp, nombre: imp.nombre || imp.apellidos });
+    payload.agente_id = SESION_ACTUAL?.agente_id || null;
+    try {
+      const { error } = await sb.from('clientes').insert(payload);
+      if (error) throw error;
+      creados++;
+    } catch (e) {
+      console.error('Error importando cliente:', imp, e);
+      errores.push(`${imp.nombre||''} ${imp.apellidos||''}`.trim() + ' (doc. ' + (imp.numero_documento||'—') + '): ' + (e.message||'error desconocido'));
+    }
+  }
+
+  await cargarClientesDesdeSupabase();
   actualizarStats();
   cerrarModal('modal-import');
-  showToast(`${nuevos.length} clientes importados${duplicados?' · '+duplicados+' duplicados omitidos':''}`);
+  if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+
+  let msg = `${creados} clientes importados a Supabase`;
+  if (duplicados) msg += ` · ${duplicados} duplicados omitidos`;
+  if (errores.length) msg += ` · ${errores.length} con error (ver consola)`;
+  showToast(msg, (creados === 0 && errores.length) ? 'err' : undefined);
+  if (errores.length) console.error('Detalle de errores de importación de clientes:', errores);
 }
 
 // ── EXPORTAR ───────────────────────────────────────────────────────────────
@@ -6813,7 +6850,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.15';
+const _CRM_VERSION = 'v46.16';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
