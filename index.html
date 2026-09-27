@@ -3777,6 +3777,44 @@ function normalizarTipoDoc(valor) {
   return MAPA[v] || 'CC';
 }
 
+// v46.18: campos de fecha del Excel de Clientes — necesitan tratamiento especial
+// porque no se pueden simplemente convertir con String().
+const CAMPOS_FECHA_CLIENTE = ['fecha_nacimiento','fecha_expedicion','fecha_creacion'];
+
+// v46.18: el lector de Excel usa {cellDates:true}, así que una celda de fecha
+// llega como objeto Date de JS, no como texto. El código anterior hacía
+// String(row[k]) para TODAS las columnas por igual, y String(unaFechaJS) produce
+// algo como "Sun Mar 25 2001 00:00:00 GMT+0000 (Coordinated Universal Time)" —
+// Postgres rechaza ese texto como fecha (error 22007) y por eso TODA fila con
+// fecha de nacimiento fallaba al guardar (los 27 clientes de Joha tenían fecha
+// de nacimiento en el Excel, por eso daba "0 importados · 27 con error" incluso
+// después del fix de v46.17, que arreglaba otro problema real pero no este).
+// Convierte a 'YYYY-MM-DD' (el único formato que Postgres siempre acepta sin
+// ambigüedad), usando getters UTC porque XLSX arma el objeto Date en UTC sin
+// importar la zona horaria del navegador — usar getFullYear()/getMonth()/getDate()
+// (locales) correría la fecha un día para atrás en Colombia (UTC-5).
+function normalizarFechaExcel(valor) {
+  if (!valor) return '';
+  if (valor instanceof Date && !isNaN(valor)) {
+    const y = valor.getUTCFullYear();
+    const m = String(valor.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(valor.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(valor).trim();
+  if (!s) return '';
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // Formato DD/MM/YYYY o DD-MM-YYYY — el más común cuando la celda quedó como
+  // texto suelto en vez de fecha de Excel (pasó en 3 de los 27 registros reales).
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    const d = dmy[1].padStart(2, '0'), m = dmy[2].padStart(2, '0'), y = dmy[3];
+    return `${y}-${m}-${d}`;
+  }
+  return ''; // No se pudo interpretar: mejor vacío (→ null) que un valor que rompa el insert
+}
+
 function handleFile(file) {
   if (!file) return;
   const reader = new FileReader();
@@ -3791,7 +3829,11 @@ function handleFile(file) {
         const c = {_id: genId()};
         Object.keys(row).forEach(k => {
           const key = COL_MAP[k.trim().toUpperCase()] || COL_MAP[k.trim()];
-          if (key) c[key] = String(row[k]||'').trim();
+          if (!key) return;
+          // v46.18: las columnas de fecha necesitan el valor CRUDO de la celda
+          // (puede ser un objeto Date) antes de convertirlo a texto plano.
+          if (CAMPOS_FECHA_CLIENTE.includes(key)) c[key] = normalizarFechaExcel(row[k]);
+          else c[key] = String(row[k]||'').trim();
         });
                 // Normalizar estado
         const est = (c.estado||'').toLowerCase();
@@ -6875,7 +6917,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.17';
+const _CRM_VERSION = 'v46.18';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
