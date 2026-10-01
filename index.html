@@ -6917,7 +6917,7 @@ function exportarPolizas() {
 // ══════════════════════════════════════════════════════════════════
 
 // ── CONTROL DE VERSIÓN — limpia cache si cambia el archivo ──────────────────
-const _CRM_VERSION = 'v46.18';
+const _CRM_VERSION = 'v46.19';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -10931,7 +10931,13 @@ async function fetchMotorIA(messages, maxTokens) {
   });
 }
 
-function calcularEstadoPoliza(p){if(p.estado==='cancelada'||p.estado==='renovada')return p.estado;if(!p.fecha_fin)return p.estado||'vigente';const hoy=new Date();hoy.setHours(0,0,0,0);const fin=parseFechaLocal(p.fecha_fin);if(!fin)return p.estado||'vigente';fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d<0)return'vencida';if(d<=31)return'por renovar';return'vigente';}
+// v46.19 (1-oct-2026): FIX — "Por Renovar" usaba ventana de 31 días pero el
+// recordatorio real de WhatsApp (Edge Function notificaciones-whatsapp,
+// DIAS_ANTES_RENOVACION) solo considera pólizas a <=15 días. Esto hacía que
+// el badge mostrara pólizas "por renovar" que en realidad no calificaban
+// para ningún mensaje automático al apretar "Procesar Renovaciones" —
+// confundía al equipo. Se bajó el umbral a 15 días para que coincidan.
+function calcularEstadoPoliza(p){if(p.estado==='cancelada'||p.estado==='renovada')return p.estado;if(!p.fecha_fin)return p.estado||'vigente';const hoy=new Date();hoy.setHours(0,0,0,0);const fin=parseFechaLocal(p.fecha_fin);if(!fin)return p.estado||'vigente';fin.setHours(0,0,0,0);const d=Math.floor((fin-hoy)/86400000);if(d<0)return'vencida';if(d<=15)return'por renovar';return'vigente';}
 
 function calcularScoreCliente(c){let s=0;const doc=c.numero_documento||'';const pol=iaGetPolizas().filter(p=>p.cedula_cliente===doc);const activas=pol.filter(p=>calcularEstadoPoliza(p)==='vigente');s+=Math.min(activas.length*15,30);const total=pol.reduce((a,p)=>a+(parseFloat(p.prima_neta)||0),0);if(total>10000000)s+=20;else if(total>5000000)s+=12;else if(total>1000000)s+=6;const ramos=[...new Set(pol.map(p=>p.ramo).filter(Boolean))];s+=Math.min(ramos.length*5,15);const renov=pol.filter(p=>{if(!p.fecha_fin)return false;const d=Math.floor((new Date(p.fecha_fin)-new Date())/86400000);return d>=0&&d<=60;});s+=Math.min(renov.length*10,15);if(c.email)s+=5;if(c.celular)s+=5;if(c.fecha_nacimiento){const hoy=new Date();const nac=parseFechaLocal(c.fecha_nacimiento);if(nac){const cu=new Date(hoy.getFullYear(),nac.getMonth(),nac.getDate());const d=Math.floor((cu-hoy)/86400000);if(d>=0&&d<=30)s+=5;}}return Math.min(s,100);}
 
