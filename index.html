@@ -6324,16 +6324,31 @@ function abrirNuevaPoliza() {
   document.getElementById('modal-poliza-title').textContent = '＋ Nueva Póliza';
   poblarSelectAseguradoras('pf-aseguradora');
   poblarSelectRamos('pf-ramo', '');
-  ['numero','aseguradora','ramo','subramo','nombres','apellidos','cedula','celular','prima','total','comision','vendedor','obs','marca','modelo','clase'].forEach(f => {
-    const el = document.getElementById('pf-'+f);
-    if (el) el.value = '';
+  // v46.20: FIX — la limpieza anterior era una lista corta y manual de campos que se
+  // quedó desactualizada según se fueron agregando secciones al formulario (Cliente,
+  // Tomador/Asegurado, Información de pagos, Comisión Vendedor, Co-corretaje,
+  // Notificaciones...). Resultado real reportado: "+ Nueva Póliza" abría mostrando el
+  // cliente y la prima de la última póliza editada/renovada. Ahora se recorren TODOS
+  // los campos del formulario (cualquier id que empiece con "pf-") y se reinician a su
+  // valor de fábrica, para que un campo nuevo que se agregue a futuro quede cubierto
+  // automáticamente sin tener que acordarse de sumarlo a una lista aparte.
+  document.querySelectorAll('#modal-poliza [id^="pf-"]').forEach(el => {
+    if (el.tagName === 'SELECT') { el.selectedIndex = 0; }
+    else if (el.type === 'checkbox') { el.checked = el.defaultChecked; }
+    else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') { el.value = el.defaultValue; }
   });
+  limpiarClientePoliza();
+  document.getElementById('pf-cliente-resultados').innerHTML = '';
   document.getElementById('pf-estado').value = 'vigente';
+  document.getElementById('pf-nueva-renovada').value = 'Nueva';
   document.getElementById('pf-fecha-ini').value = '';
   document.getElementById('pf-fecha-fin').value = '';
   const selModalidad = document.getElementById('pf-modalidad');
   if (selModalidad) selModalidad.value = '';
   document.getElementById('pf-beneficiarios-list').innerHTML = '';
+  document.getElementById('pf-total-display').textContent = '$0';
+  const panelCocorretaje = document.getElementById('pf-cocorretaje-panel');
+  if (panelCocorretaje) panelCocorretaje.style.display = 'none';
   actualizarVisibilidadModalidad();
   abrirModal('modal-poliza');
 }
@@ -6935,7 +6950,11 @@ function exportarPolizas() {
 // (sin Ramos) quedaba vacía al seleccionarla. Se normaliza la comparación (normAsegKey)
 // en los 5 puntos donde se cruzan ambos catálogos, y se corrige el nombre de Qualitas
 // (el catálogo interno traía la palabra "COLOMBIA" de más, que Supabase no tiene).
-const _CRM_VERSION = 'v46.20';
+// v46.21 (2-oct-2026): FIX — "+ Nueva Póliza" abría mostrando cliente y datos de prima
+// de la última póliza editada/renovada (reportado por Alberny: le pasaba siempre a
+// Johanna). Causa: abrirNuevaPoliza() limpiaba una lista corta y desactualizada de
+// campos. Se reemplazó por una limpieza genérica de todo el formulario.
+const _CRM_VERSION = 'v46.21';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
