@@ -3575,7 +3575,7 @@ function renderClientePolizas(c) {
       onclick="cerrarDetalle();setTimeout(()=>{navTo('polizas',null);setTimeout(()=>abrirDetallePoliza('${p._id}'),200)},100)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
         <span style="font-size:12px;font-weight:700;color:var(--ciel);">${p.numero_poliza||'—'}</span>
-        ${pillPoliza(p.estado, p)}
+        ${pillPoliza(p.estado, p)}${badgeAvisoPendiente(p)}
       </div>
       <div style="font-size:11px;color:var(--t2);">${p.aseguradora||'—'} · ${p.ramo||'—'}</div>
       <div style="font-size:11px;color:var(--t3);">Vence: ${fmtFecha(p.fecha_fin)} · ${fmtMoneda(p.total||p.prima_neta)}</div>
@@ -5599,6 +5599,12 @@ let ASEGURADORAS_CACHE = []; // fila completa de Supabase: {id, nombre, nombre_c
 // (una sola vez por póliza, ver yaEnviado(..., soloHoy=false) en la Edge Function v36).
 // Se usa para pintar el pill 'Recordatorio enviado' y no confundirlo con 'Por Renovar' sin avisar aún.
 let RENOVACIONES_NOTIFICADAS = new Set();
+// v46.23: set de claves "polizaId|tipo" (tipo = 'poliza_nueva' o 'poliza_renovada') que
+// YA tienen el aviso de bienvenida/renovación confirmado por WhatsApp (botón manual
+// "📨 Recordar", ver enviarAvisoPoliza()). Se usa para marcar con un badge las pólizas
+// Nuevas o Renovadas a las que todavía no se les ha avisado, para que no se queden
+// pendientes por olvido del equipo.
+let AVISOS_POLIZA_ENVIADOS = new Set();
 
 // Quita tildes/acentos y pasa a minúsculas, para comparar textos sin que las tildes rompan el match
 function normalizarTexto(s) {
@@ -5774,6 +5780,20 @@ async function cargarRenovacionesNotificadasCache() {
   } catch (e) { console.error('Error de red cargando renovaciones notificadas:', e); }
 }
 
+// v46.23: trae el set de pólizas (Nuevas o Renovadas) que YA tienen su aviso de
+// bienvenida/renovación confirmado por WhatsApp, para pintar el badge "⚠️ Falta avisar"
+// en las que aún no lo tienen. Se llama al iniciar sesión y después de cada envío
+// manual exitoso desde enviarAvisoPoliza().
+async function cargarAvisosPolizaCache() {
+  try {
+    const { data, error } = await sb.from('notificaciones_log').select('poliza_id, tipo')
+      .in('tipo', ['poliza_nueva', 'poliza_renovada']).eq('canal', 'whatsapp').eq('estado', 'enviado')
+      .not('poliza_id', 'is', null);
+    if (error) { console.error('Error cargando avisos de póliza:', error.message); return; }
+    AVISOS_POLIZA_ENVIADOS = new Set((data || []).map(r => `${r.poliza_id}|${r.tipo}`));
+  } catch (e) { console.error('Error de red cargando avisos de póliza:', e); }
+}
+
 // Trae todas las pólizas desde Supabase y refresca la vista. Se llama al iniciar sesión.
 async function cargarPolizasDesdeSupabase() {
   try {
@@ -5786,6 +5806,7 @@ async function cargarPolizasDesdeSupabase() {
     if (RAMOS_CFG_CACHE.length === 0) await cargarRamosCfgCache();
     actualizarRamosEnMemoria();
     await cargarRenovacionesNotificadasCache();
+    await cargarAvisosPolizaCache();
     const { data, error } = await sb.from('polizas').select('*').order('created_at', { ascending: false });
     if (error) { console.error('Error cargando pólizas de Supabase:', error.message); return; }
     polizas = (data || []).map(mapPolizaDesdeSupabase);
@@ -5963,6 +5984,22 @@ function normalizarEstadoPoliza(e) {
   return v;
 }
 
+// v46.23: ¿esta póliza (Nueva o Renovada, no Cancelada) todavía no tiene su aviso de
+// bienvenida/renovación confirmado por WhatsApp? Ver AVISOS_POLIZA_ENVIADOS.
+function avisoPendientePoliza(p) {
+  if (!p || !p._id) return false;
+  if ((p.estado || '').toLowerCase() === 'cancelada') return false;
+  const tipo = (p.nueva_renovada === 'Renovada') ? 'poliza_renovada' : 'poliza_nueva';
+  return !AVISOS_POLIZA_ENVIADOS.has(`${p._id}|${tipo}`);
+}
+
+// Badge chiquito para pegar junto al pill de estado — no reemplaza el pill, se suma.
+function badgeAvisoPendiente(p) {
+  if (!avisoPendientePoliza(p)) return '';
+  const tipoTxt = (p.nueva_renovada === 'Renovada') ? 'renovación' : 'bienvenida';
+  return `<span class="pill pill-warn" style="margin-left:4px;font-size:9px;" title="Aún no se envía el aviso de ${tipoTxt} por WhatsApp — botón 📨 Recordar en el detalle">⚠️ Falta avisar</span>`;
+}
+
 function pillPoliza(e, p) {
   // v46.22: si la póliza está "por renovar" y ya se le envió el WhatsApp de
   // recordatorio (una sola vez por póliza, ver RENOVACIONES_NOTIFICADAS), se
@@ -6083,7 +6120,7 @@ function renderPolizas() {
         <div style="font-size:11px;color:var(--t2);">${fmtFecha(p.fecha_inicio)}</div>
         <div style="font-size:11px;color:var(--t3);">→ ${fmtFecha(p.fecha_fin)}</div>
       </div>
-      <div>${pillPoliza(p.estado||'vigente', p)}</div>
+      <div>${pillPoliza(p.estado||'vigente', p)}${badgeAvisoPendiente(p)}</div>
       <div class="row-actions" style="opacity:1;">
         <button class="act-btn edit" onclick="event.stopPropagation();editarPoliza('${p._id}')" title="Editar">✏️</button>
         <button class="act-btn del" onclick="event.stopPropagation();eliminarPoliza('${p._id}')" title="Eliminar">🗑️</button>
@@ -6114,7 +6151,7 @@ function setTabDetallePoliza(tab) {
 function renderDetallePolizaInfo(p) {
   return `<div class="dp-tab-content">
     <div style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
-      ${pillPoliza(p.estado||'vigente', p)}
+      ${pillPoliza(p.estado||'vigente', p)}${badgeAvisoPendiente(p)}
       ${p.nueva_renovada?`<span style="font-size:11px;color:var(--t3);">${p.nueva_renovada}</span>`:''}
     </div>
     <div class="dp-section">
@@ -6802,6 +6839,11 @@ async function enviarAvisoPoliza(polizaId) {
     } else {
       showToast('Aviso enviado por WhatsApp');
     }
+    // v46.23: refresca el set de "avisos enviados" y repinta para que el badge
+    // "⚠️ Falta avisar" desaparezca de inmediato, sin recargar la página.
+    await cargarAvisosPolizaCache();
+    if (typeof renderPolizas === 'function') renderPolizas();
+    if (_polizaDetalleId === polizaId && typeof setTabDetallePoliza === 'function') setTabDetallePoliza('info');
   } catch (e) {
     showToast('Error al enviar: ' + e.message, 'err');
   }
@@ -6986,7 +7028,7 @@ function exportarPolizas() {
 // de la última póliza editada/renovada (reportado por Alberny: le pasaba siempre a
 // Johanna). Causa: abrirNuevaPoliza() limpiaba una lista corta y desactualizada de
 // campos. Se reemplazó por una limpieza genérica de todo el formulario.
-const _CRM_VERSION = 'v46.22';
+const _CRM_VERSION = 'v46.23';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
