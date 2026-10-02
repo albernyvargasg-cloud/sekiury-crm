@@ -136,6 +136,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--t1);min-he
 .pill-ok{background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.2);}
 .pill-err{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.2);}
 .pill-warn{background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(245,158,11,.2);}
+.pill-info{background:rgba(104,215,255,.12);color:#68D7FF;border:1px solid rgba(104,215,255,.25);}
 .row-actions{display:flex;gap:6px;opacity:1;}
 .table-row:hover .row-actions{opacity:1;}
 .act-btn{width:26px;height:26px;border-radius:6px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;}
@@ -3574,7 +3575,7 @@ function renderClientePolizas(c) {
       onclick="cerrarDetalle();setTimeout(()=>{navTo('polizas',null);setTimeout(()=>abrirDetallePoliza('${p._id}'),200)},100)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
         <span style="font-size:12px;font-weight:700;color:var(--ciel);">${p.numero_poliza||'—'}</span>
-        ${pillPoliza(p.estado)}
+        ${pillPoliza(p.estado, p)}
       </div>
       <div style="font-size:11px;color:var(--t2);">${p.aseguradora||'—'} · ${p.ramo||'—'}</div>
       <div style="font-size:11px;color:var(--t3);">Vence: ${fmtFecha(p.fecha_fin)} · ${fmtMoneda(p.total||p.prima_neta)}</div>
@@ -5594,6 +5595,10 @@ let polizas = seedPolizas();
 // SINCRONIZACIÓN PÓLIZAS ↔ SUPABASE
 // ══════════════════════════════════════════════════════════════════════════════
 let ASEGURADORAS_CACHE = []; // fila completa de Supabase: {id, nombre, nombre_corto, nit, codigo, email, linea_asistencia, pct_iva, pct_retencion, pct_ret_iva, pct_ret_ica, tiene_codigo, activa, ...}
+// v46.22: set de poliza._id que YA recibieron el WhatsApp de recordatorio de renovación
+// (una sola vez por póliza, ver yaEnviado(..., soloHoy=false) en la Edge Function v36).
+// Se usa para pintar el pill 'Recordatorio enviado' y no confundirlo con 'Por Renovar' sin avisar aún.
+let RENOVACIONES_NOTIFICADAS = new Set();
 
 // Quita tildes/acentos y pasa a minúsculas, para comparar textos sin que las tildes rompan el match
 function normalizarTexto(s) {
@@ -5755,6 +5760,20 @@ function mapPolizaASupabase(data) {
   };
 }
 
+// v46.22: trae el set de pólizas que YA recibieron el WhatsApp de recordatorio de
+// renovación (tipo='renovacion', canal='whatsapp', estado='enviado'), para pintar el
+// pill 'Recordatorio enviado' en vez de repetir el aviso. Se llama al iniciar sesión
+// y después de cada "Procesar Renovaciones" exitoso.
+async function cargarRenovacionesNotificadasCache() {
+  try {
+    const { data, error } = await sb.from('notificaciones_log').select('poliza_id')
+      .eq('tipo', 'renovacion').eq('canal', 'whatsapp').eq('estado', 'enviado')
+      .not('poliza_id', 'is', null);
+    if (error) { console.error('Error cargando renovaciones notificadas:', error.message); return; }
+    RENOVACIONES_NOTIFICADAS = new Set((data || []).map(r => r.poliza_id));
+  } catch (e) { console.error('Error de red cargando renovaciones notificadas:', e); }
+}
+
 // Trae todas las pólizas desde Supabase y refresca la vista. Se llama al iniciar sesión.
 async function cargarPolizasDesdeSupabase() {
   try {
@@ -5766,6 +5785,7 @@ async function cargarPolizasDesdeSupabase() {
     actualizarAseguradorasEnMemoria();
     if (RAMOS_CFG_CACHE.length === 0) await cargarRamosCfgCache();
     actualizarRamosEnMemoria();
+    await cargarRenovacionesNotificadasCache();
     const { data, error } = await sb.from('polizas').select('*').order('created_at', { ascending: false });
     if (error) { console.error('Error cargando pólizas de Supabase:', error.message); return; }
     polizas = (data || []).map(mapPolizaDesdeSupabase);
@@ -5943,7 +5963,14 @@ function normalizarEstadoPoliza(e) {
   return v;
 }
 
-function pillPoliza(e) {
+function pillPoliza(e, p) {
+  // v46.22: si la póliza está "por renovar" y ya se le envió el WhatsApp de
+  // recordatorio (una sola vez por póliza, ver RENOVACIONES_NOTIFICADAS), se
+  // muestra un pill distinto para que el equipo sepa que ya se avisó al cliente
+  // y que el seguimiento de aquí en adelante es manual (gestionar la renovación).
+  if (e === 'por renovar' && p && p._id && RENOVACIONES_NOTIFICADAS.has(p._id)) {
+    return `<span class="pill pill-info">📨 Recordatorio enviado</span>`;
+  }
   const m = {
     'vigente':   {cls:'pill-ok', txt:'Vigente'},
     'por renovar':{cls:'pill-warn', txt:'Por Renovar'},
@@ -6056,7 +6083,7 @@ function renderPolizas() {
         <div style="font-size:11px;color:var(--t2);">${fmtFecha(p.fecha_inicio)}</div>
         <div style="font-size:11px;color:var(--t3);">→ ${fmtFecha(p.fecha_fin)}</div>
       </div>
-      <div>${pillPoliza(p.estado||'vigente')}</div>
+      <div>${pillPoliza(p.estado||'vigente', p)}</div>
       <div class="row-actions" style="opacity:1;">
         <button class="act-btn edit" onclick="event.stopPropagation();editarPoliza('${p._id}')" title="Editar">✏️</button>
         <button class="act-btn del" onclick="event.stopPropagation();eliminarPoliza('${p._id}')" title="Eliminar">🗑️</button>
@@ -6087,7 +6114,7 @@ function setTabDetallePoliza(tab) {
 function renderDetallePolizaInfo(p) {
   return `<div class="dp-tab-content">
     <div style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
-      ${pillPoliza(p.estado||'vigente')}
+      ${pillPoliza(p.estado||'vigente', p)}
       ${p.nueva_renovada?`<span style="font-size:11px;color:var(--t3);">${p.nueva_renovada}</span>`:''}
     </div>
     <div class="dp-section">
@@ -6784,9 +6811,10 @@ async function enviarAvisoPoliza(polizaId) {
 // en el módulo Pólizas. v46.6 (19-sep-2026): antes corría sola por el cron diario;
 // Alberny no la había aprobado para eso, así que quedó igual que Cobros y Pólizas —
 // 100% a voluntad del humano. Revisa todas las pólizas vigentes a <=15 días de
-// vencer y les avisa por WhatsApp (una sola vez por día por póliza).
+// vencer y les avisa por WhatsApp (v46.22: una sola vez POR PÓLIZA, no se repite
+// día a día; ver yaEnviado(..., soloHoy=false) en la Edge Function v36).
 async function procesarRenovacionesManual() {
-  if (!confirm('¿Procesar renovaciones ahora?\n\nSe revisarán todas las pólizas vigentes a 15 días o menos de vencer y se enviará un WhatsApp de recordatorio a cada cliente que aún no lo haya recibido hoy.')) return;
+  if (!confirm('¿Procesar renovaciones ahora?\n\nSe revisarán todas las pólizas vigentes a 15 días o menos de vencer y se enviará un WhatsApp de recordatorio a cada cliente que AÚN NO lo haya recibido nunca (el aviso es una sola vez por póliza, no se repite).')) return;
   const btn = document.querySelector('#page-polizas button[onclick="procesarRenovacionesManual()"]');
   const textoOriginal = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Procesando...'; }
@@ -6799,7 +6827,11 @@ async function procesarRenovacionesManual() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al procesar renovaciones');
-    showToast(`✅ Renovaciones: ${data.enviados||0} enviados, ${data.omitidos||0} ya avisados hoy, ${data.fallidos||0} fallidos, ${data.sin_celular||0} sin celular`);
+    showToast(`✅ Renovaciones: ${data.enviados||0} enviados, ${data.omitidos||0} ya avisados antes, ${data.fallidos||0} fallidos, ${data.sin_celular||0} sin celular`);
+    // v46.22: refresca el set de "ya notificados" y repinta la tabla para que los pills
+    // 'Recordatorio enviado' aparezcan de inmediato, sin tener que recargar la página.
+    await cargarRenovacionesNotificadasCache();
+    if (typeof renderPolizas === 'function') renderPolizas();
   } catch (e) {
     showToast('Error al procesar renovaciones: ' + e.message, 'err');
   } finally {
@@ -6954,7 +6986,7 @@ function exportarPolizas() {
 // de la última póliza editada/renovada (reportado por Alberny: le pasaba siempre a
 // Johanna). Causa: abrirNuevaPoliza() limpiaba una lista corta y desactualizada de
 // campos. Se reemplazó por una limpieza genérica de todo el formulario.
-const _CRM_VERSION = 'v46.21';
+const _CRM_VERSION = 'v46.22';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
