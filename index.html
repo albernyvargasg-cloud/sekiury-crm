@@ -5105,6 +5105,9 @@ async function cargarBandejaWhatsApp() {
     const totalNoLeidos = WA_CONVERSACIONES.reduce((s,c) => s + c.no_leidos, 0);
     const badge = document.getElementById('nav-wa-badge');
     if (badge) { badge.style.display = totalNoLeidos > 0 ? 'inline-block' : 'none'; badge.textContent = totalNoLeidos; }
+    // v46.24: mismo contador de no leídos, reflejado también en el tile del menú móvil.
+    const badgeMn = document.getElementById('nav-wa-badge-mn');
+    if (badgeMn) { badgeMn.style.display = totalNoLeidos > 0 ? 'inline-block' : 'none'; badgeMn.textContent = totalNoLeidos; }
   } catch (e) {
     console.error('Error de red cargando WhatsApp:', e);
   }
@@ -7028,7 +7031,7 @@ function exportarPolizas() {
 // de la última póliza editada/renovada (reportado por Alberny: le pasaba siempre a
 // Johanna). Causa: abrirNuevaPoliza() limpiaba una lista corta y desactualizada de
 // campos. Se reemplazó por una limpieza genérica de todo el formulario.
-const _CRM_VERSION = 'v46.23';
+const _CRM_VERSION = 'v46.24';
 if (localStorage.getItem('sekiury_version') !== _CRM_VERSION) {
   localStorage.clear();
   localStorage.setItem('sekiury_version', _CRM_VERSION);
@@ -10705,6 +10708,10 @@ actualizarDashboard();
 <div class="mn-overlay" id="mn-overlay" onclick="cerrarMnMore()"></div>
 <div class="mn-more-panel" id="mn-more-panel">
   <div class="mn-more-item" onclick="mnNavTo('tareas')"><span class="mn-ic">✅</span><span class="mn-lb">Tareas</span></div>
+  <!-- v46.24: faltaba el acceso a la Bandeja WhatsApp desde el menú móvil — la página
+       ya existía y funcionaba igual que en desktop (page-whatsapp), solo no había
+       forma de abrirla desde el nav de "Más" en el celular. -->
+  <div class="mn-more-item" onclick="mnNavTo('whatsapp')"><span class="mn-ic">💬</span><span class="mn-lb">WhatsApp</span><span class="bdg err" id="nav-wa-badge-mn" style="display:none;margin-top:2px;">0</span></div>
   <div class="mn-more-item" onclick="mnNavTo('siniestros')"><span class="mn-ic">⚠️</span><span class="mn-lb">Siniestros</span></div>
   <div class="mn-more-item" onclick="mnNavTo('cobros')"><span class="mn-ic">💳</span><span class="mn-lb">Cobros</span></div>
   <div class="mn-more-item" onclick="mnNavTo('recibos')"><span class="mn-ic">🧾</span><span class="mn-lb">Recibos</span></div>
